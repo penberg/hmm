@@ -22,13 +22,28 @@ an APFS volume, the same one as the home directory.
 ## Usage
 
 Run Claude Code in a draft named `parser`, letting it save its sessions and
-settings in `~/.claude`:
+settings in `~/.claude`, and have it commit its work there as usual:
 
 ```sh
 hmm run -n parser -w ~/.claude claude
 ```
 
-List the drafts of the working directory:
+When it is done, see what it changed, merge its commits into the branch you
+are on, and remove the draft:
+
+```sh
+hmm diff parser
+hmm merge parser
+hmm rm parser
+```
+
+`hmm merge` works like `git merge`: a fast-forward if your branch has not
+moved since the draft was made, a merge commit if it has, and conflicts to
+resolve as for any merge if both changed the same lines. Only commits are
+merged; if the command left changes it did not commit, `hmm merge` says so.
+
+Meanwhile, you can keep working, and run more drafts side by side. List the
+drafts of the working directory:
 
 ```console
 $ hmm
@@ -37,22 +52,31 @@ k3xq9a  parser  done      2h  ~/src/penberg/dwim
 p7mw2d  -       running   5m  ~/src/penberg/dwim
 ```
 
-See what changed in a draft, and remove it:
-
-```sh
-hmm diff parser
-hmm rm parser
-```
-
-| Command | Description |
-| --- | --- |
-| `hmm run [--rm] [-n name] [-w path]... [command...]` | Run a command (or your shell) in a new draft, removing it afterwards with `--rm` |
-| `hmm ls [-a]` | List drafts of the working directory, or of every directory with `-a` |
-| `hmm diff [--stat] [draft]` | Show what changed in a draft (the latest one by default) |
-| `hmm rm draft...` | Remove drafts |
-
 A draft can be referred to by its name, its ID, or a unique prefix of its
-ID. See [`man/hmm.1`](man/hmm.1) (`man ./man/hmm.1`) for the details.
+ID; with none, commands use the working directory's latest draft.
+
+## Git
+
+`hmm` knows about git, but works without it. When the working directory is
+the top of a git repository, making a draft records the commit it is at and
+the tree of its files, uncommitted changes included. This takes little time
+and puts nothing in your repository, and gives `hmm` something to compare
+the draft with:
+
+- `hmm diff` shows what changed in the draft, leaving out what git ignores,
+  such as build output.
+- `hmm merge` brings the commits made in the draft into your branch.
+- `hmm apply` makes the changes in the draft, committed or not, in the
+  working directory, without staging or committing anything. It applies all
+  of them or, if any conflicts with what you have changed since, none.
+
+Git runs outside the sandbox and never reads the repository in the draft,
+whose configuration the command could have changed to make git run
+anything: commits are taken from the draft as a bundle, and every object is
+checked as it is fetched.
+
+In a directory that is not a git repository, `hmm` keeps a second clone to
+compare the draft with, and `hmm diff` and `hmm apply` work the same.
 
 ## Sandbox
 
@@ -63,8 +87,37 @@ with `-w`. It cannot read `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`,
 or other drafts.
 
 The network is not confined: a command can send anything it can read to
-anywhere.
+anywhere, and can push to remotes whose credentials it can reach, such as
+through the macOS keychain.
+
+Commits made in a draft are not signed if signing needs `~/.gnupg` or
+`~/.ssh`, which the command cannot read; the merge commit `hmm merge` makes
+is. A draft of a linked worktree cannot be committed to, as its repository
+lies outside the draft.
 
 ## License
 
 MIT
+
+## Command Line Reference
+
+| Command | Description |
+| --- | --- |
+| `hmm` | List the drafts of the working directory, as `hmm ls` does |
+| `hmm run [--rm] [-n name] [-w path]... [command...]` | Run a command (or your shell) in a new draft, removing it afterwards with `--rm` |
+| `hmm ls [-a]` | List drafts of the working directory, or of every directory with `-a` |
+| `hmm diff [--stat] [draft]` | Show what changed in a draft |
+| `hmm merge [draft]` | Merge the commits made in a draft into the working directory's branch |
+| `hmm apply [--check] [draft]` | Make a draft's changes in the working directory, or with `--check` only say whether they apply |
+| `hmm rm draft...` | Remove drafts, and the references to their commits that `hmm merge` made |
+
+| Option | Description |
+| --- | --- |
+| `--rm` | Remove the draft when the command exits |
+| `-n`, `--name name` | Name the draft, so it can be referred to by name |
+| `-w`, `--write path` | Let the command write to `path` too; can be repeated |
+| `-a`, `--all` | List the drafts of every directory |
+| `--stat` | Show only which files changed, and how much |
+| `--check` | Only say whether the changes apply |
+
+See [`man/hmm.1`](man/hmm.1) (`man ./man/hmm.1`) for the details.
