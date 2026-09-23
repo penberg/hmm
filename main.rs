@@ -4,11 +4,13 @@
 
 #[cfg(target_os = "macos")]
 mod darwin;
+mod git;
 
 mod cmd {
     pub mod apply;
     pub mod diff;
     pub mod ls;
+    pub mod merge;
     pub mod rm;
     pub mod run;
 }
@@ -44,6 +46,7 @@ enum Command {
     Ls(cmd::ls::Ls),
     Diff(cmd::diff::Diff),
     Apply(cmd::apply::Apply),
+    Merge(cmd::merge::Merge),
     Rm(cmd::rm::Rm),
 }
 
@@ -55,6 +58,7 @@ fn main() -> ExitCode {
         Some(Command::Ls(ls)) => ls.run(),
         Some(Command::Diff(diff)) => diff.run(),
         Some(Command::Apply(apply)) => apply.run(),
+        Some(Command::Merge(merge)) => merge.run(),
         Some(Command::Rm(rm)) => rm.run(),
     };
     match result {
@@ -83,11 +87,11 @@ const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// The number of letters in a draft's ID.
 const ID_LEN: usize = 6;
 
-/// A draft: a directory under the root named by a random ID, holding two
-/// clones of a directory: `base`, as it was when the draft was made, and
-/// `tree/<name>`, named as the directory, which the command runs in and
-/// changes; an `origin` file with the directory's path; and, if the draft was
-/// given one, a `name` file with its name. The command running in the draft holds a lock on the `origin`
+/// A draft: a directory under the root named by a random ID, holding a clone
+/// of a directory, `tree/<name>`, named as the directory, which the command
+/// runs in and changes; a record of what the directory was when the draft was
+/// made (see `git::make`); an `origin` file with the directory's path; and,
+/// if the draft was given one, a `name` file with its name. The command running in the draft holds a lock on the `origin`
 /// file.
 pub struct Draft {
     pub id: String,
@@ -220,8 +224,9 @@ impl Draft {
             .join(origin.file_name().unwrap_or("root".as_ref())))
     }
 
-    /// The clone of the directory as it was when the draft was made, which
-    /// the command cannot see: what the draft is compared with.
+    /// The clone of the directory as it was when the draft was made, if it
+    /// was not the top of a git repository, which the command cannot see:
+    /// what the draft is compared with.
     pub fn base(&self) -> PathBuf {
         self.dir.join("base")
     }

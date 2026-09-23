@@ -1,10 +1,13 @@
 //! `hmm rm`: removes drafts.
 
-use std::{env, fs, io, process::ExitCode};
+use std::{
+    env, fs, io,
+    process::{ExitCode, Stdio},
+};
 
 use argh::FromArgs;
 
-use crate::{Draft, root};
+use crate::{Draft, git, root};
 
 /// Remove drafts, and everything in them.
 #[derive(FromArgs)]
@@ -34,8 +37,21 @@ impl Rm {
     }
 }
 
-/// Removes `draft`, unless a command is running in it.
+/// Removes `draft`, unless a command is running in it, and the reference
+/// `hmm merge` made to its commits.
 fn remove(draft: &Draft) -> io::Result<()> {
     let _lock = draft.lock()?;
-    fs::remove_dir_all(&draft.dir)
+    let origin = draft.origin();
+    fs::remove_dir_all(&draft.dir)?;
+    if let Ok(origin) = origin
+        && git::toplevel(&origin).is_some()
+    {
+        let _ = git::git()
+            .arg("-C")
+            .arg(&origin)
+            .args(["update-ref", "-d", &format!("refs/hmm/{}", draft.id)])
+            .stderr(Stdio::null())
+            .status();
+    }
+    Ok(())
 }

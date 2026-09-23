@@ -12,7 +12,7 @@ use argh::FromArgs;
 
 use crate::{
     Draft,
-    cmd::diff::{Changes, git},
+    git::{Changes, Repo},
     root,
 };
 
@@ -88,13 +88,14 @@ impl Apply {
 /// `origin`. Returns whether it applied, and shows git's reasons if it did not
 /// and `verbose` is set.
 fn apply(
-    repo: &Path,
+    repo: &Repo,
     origin: &Path,
     patch: &[u8],
     options: &[&str],
     verbose: bool,
 ) -> io::Result<bool> {
-    let mut child = git(repo)
+    let mut child = repo
+        .git()
         .arg("--work-tree")
         .arg(origin)
         .args(["apply", "--whitespace=nowarn"])

@@ -1,14 +1,10 @@
 //! `hmm diff`: shows what changed in a draft since it was made.
 
-use std::{
-    env, io,
-    path::{Path, PathBuf},
-    process::{Command, ExitCode},
-};
+use std::{env, io, process::ExitCode};
 
 use argh::FromArgs;
 
-use crate::{Draft, root};
+use crate::{Draft, git::Changes, root};
 
 /// Show what changed in a draft since it was made.
 #[derive(FromArgs)]
@@ -31,7 +27,9 @@ impl Diff {
         let draft = Draft::pick(&root, &cwd, self.draft.as_deref())?;
         let changes = Changes::of(&draft)?;
         let stat = if self.stat { "--stat" } else { "--patch" };
-        let status = git(&changes.repo)
+        let status = changes
+            .repo
+            .git()
             .args(["diff", stat, &changes.before, &changes.after])
             .status()?;
         Ok(if status.success() {
@@ -40,128 +38,4 @@ impl Diff {
             ExitCode::FAILURE
         })
     }
-}
-
-/// What changed in a draft: its base and its tree, recorded as trees in a
-/// repository.
-pub struct Changes {
-    /// The repository the trees are in.
-    pub repo: PathBuf,
-    /// The ID of the base's tree.
-    pub before: String,
-    /// The ID of the draft's tree.
-    pub after: String,
-}
-
-impl Changes {
-    /// Records what changed in `draft`.
-    pub fn of(draft: &Draft) -> io::Result<Changes> {
-        let base = draft.base();
-        if !base.is_dir() {
-            return Err(io::Error::other(format!(
-                "draft {} has no base to compare it with",
-                draft.label()
-            )));
-        }
-        let repo = repository(draft)?;
-        let before = snapshot(&repo, &base, &draft.dir.join("base.index"))?;
-        let after = snapshot(&repo, &draft.tree()?, &draft.dir.join("tree.index"))?;
-        Ok(Changes {
-            repo,
-            before,
-            after,
-        })
-    }
-
-    /// The changes as a patch that `git apply` applies to the directory the
-    /// draft was made from, whatever the configuration says about how to
-    /// show a diff.
-    pub fn patch(&self) -> io::Result<Vec<u8>> {
-        let diff = git(&self.repo)
-            .args([
-                "diff",
-                "--binary",
-                "--no-color",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-relative",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                &self.before,
-                &self.after,
-            ])
-            .output()?;
-        if !diff.status.success() {
-            return Err(io::Error::other("git could not make a patch"));
-        }
-        Ok(diff.stdout)
-    }
-}
-
-/// The repository to compare `draft`'s trees in: the base's, if the directory
-/// was a repository, so that git ignores what it ignores, such as build
-/// output; otherwise one of the draft's own, made the first time it is
-/// needed.
-///
-/// Git runs outside the sandbox, so it never uses the repository in the
-/// draft's tree: its configuration can make git run any command, and the
-/// command in the draft may have changed it. The base's is the working
-/// directory's as it was when the draft was made, which the command could not
-/// see.
-fn repository(draft: &Draft) -> io::Result<PathBuf> {
-    let repo = draft.base().join(".git");
-    if repo.exists() {
-        return Ok(repo);
-    }
-    let repo = draft.dir.join("git");
-    if !repo.exists() {
-        let made = Command::new("git")
-            .args(["init", "--quiet", "--bare"])
-            .arg(&repo)
-            .status()?;
-        if !made.success() {
-            return Err(io::Error::other("git could not make a repository"));
-        }
-    }
-    Ok(repo)
-}
-
-/// A command that runs git on the repository `repo`.
-pub fn git(repo: &Path) -> Command {
-    let mut git = Command::new("git");
-    git.arg("--git-dir").arg(repo);
-    for var in ["GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY"] {
-        git.env_remove(var);
-    }
-    git
-}
-
-/// Records the files in `tree` that git does not ignore as a tree in the
-/// repository `repo`, keeping the index in `index`, and returns the tree's
-/// ID.
-fn snapshot(repo: &Path, tree: &Path, index: &Path) -> io::Result<String> {
-    let added = git(repo)
-        .arg("--work-tree")
-        .arg(tree)
-        .args(["add", "--all", "--", "."])
-        .current_dir(tree)
-        .env("GIT_INDEX_FILE", index)
-        .status()?;
-    if !added.success() {
-        return Err(io::Error::other(format!(
-            "git could not read {}",
-            tree.display()
-        )));
-    }
-    let written = git(repo)
-        .arg("write-tree")
-        .env("GIT_INDEX_FILE", index)
-        .output()?;
-    if !written.status.success() {
-        return Err(io::Error::other(format!(
-            "git could not record {}",
-            tree.display()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&written.stdout).trim().to_string())
 }

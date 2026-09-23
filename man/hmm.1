@@ -23,6 +23,9 @@ hmm \- run commands in drafts of the working directory
 .RB [ \-\-check ]
 .RI [ draft ]
 .br
+.B hmm merge
+.RI [ draft ]
+.br
 .B hmm rm
 .IR draft ...
 .SH DESCRIPTION
@@ -44,6 +47,14 @@ data directory (see
 .BR FILES ),
 and it is confined there: see
 .BR SANDBOX .
+.PP
+When it makes a draft,
+.B hmm
+also records what the directory was, to compare the draft with later.
+If the directory is the top of a git repository, that is the commit it is
+at and the tree of its files, uncommitted changes included, which take
+little time and no space in the repository; otherwise, it is a second
+clone.
 .PP
 With no command,
 .B hmm
@@ -129,8 +140,30 @@ With
 only say whether the changes apply.
 The draft stays until it is removed.
 .TP
+.B hmm merge \fR[\fIdraft\fR]
+Merge the commits made in
+.IR draft ,
+or in the working directory's latest draft if none is given, into the
+branch the directory it was made from is on, as
+.BR "git merge" (1)
+does: a fast-forward if the branch has not moved since the draft was made,
+a merge commit if it has, and, if the two changed the same lines, conflicts
+to resolve and commit as for any merge.
+Only commits are merged: changes the command did not commit are left in the
+draft, and
+.B hmm merge
+says so.
+The draft must have been made from the top of a git repository, and no
+command may be running in it.
+The commits stay in the repository as
+.BI refs/hmm/ id
+until the draft is removed.
+.TP
 .B hmm rm \fIdraft \fR...
-Remove the drafts given, and everything in them.
+Remove the drafts given, and everything in them, and the references to
+their commits that
+.B hmm merge
+made.
 A draft in which a command is running is not removed.
 .PP
 .B hmm \-\-help
@@ -196,19 +229,19 @@ In each:
 The clone the command runs in and changes, named as the directory it was
 made from.
 .TP
-.I base/
-A clone of the directory as it was when the draft was made, which the
-command cannot see:
-.B hmm diff
-compares the draft with it.
+.IR head ", " fork
+If the directory is the top of a git repository: the commit it was at when
+the draft was made, and the tree of its files then.
 .TP
-.IR base.index ", " tree.index ", " git/
+.I base/
+Otherwise: a clone of the directory as it was when the draft was made.
+.TP
+.IR objects/ ", " fork.index ", " base.index ", " tree.index ", " git/
 What
-.B hmm diff
-and
-.B hmm apply
-keep to compare the two with git: its indexes of the clones, and, if the
-directory is not a git repository, a repository of its own.
+.B hmm
+keeps to compare the draft with git: the objects it makes, kept out of the
+directory's repository; its indexes of the directory and the draft; and, if
+the directory is not a git repository, a repository of its own.
 .TP
 .I origin
 The path of the directory it was made from.
@@ -233,8 +266,8 @@ Run Claude Code in a draft named
 .B hmm run \-n parser \-w ~/.claude claude
 .RE
 .PP
-See the drafts of the working directory, what one changed, apply it, and
-remove it:
+See the drafts of the working directory, what one changed, merge the
+commits made in it, and remove it:
 .PP
 .RS
 .nf
@@ -243,7 +276,7 @@ ID      NAME    STATE    AGE  ORIGIN
 k3xq9a  parser  done      2h  ~/src/penberg/dwim
 p7mw2d  \-       running   5m  ~/src/penberg/dwim
 .B $ hmm diff parser
-.B $ hmm apply parser
+.B $ hmm merge parser
 .B $ hmm rm parser
 .fi
 .RE
@@ -256,7 +289,22 @@ The command runs in the draft's path rather than the working directory's,
 so tools that remember absolute paths, such as build caches, may rebuild.
 .PP
 The network is not confined: a command can send anything it can read to
-anywhere.
+anywhere, and can push to remotes whose credentials it can reach, such as
+through the macOS keychain.
+.PP
+Commits made in a draft are not signed if signing needs
+.B ~/.gnupg
+or
+.BR ~/.ssh ,
+which the command cannot read; the merge commit
+.B hmm merge
+makes is.
+.PP
+A draft of a linked worktree
+.RB ( git\-worktree (1))
+shares its repository with the worktree, which the command cannot write
+to, so commits cannot be made in it.
 .SH SEE ALSO
+.BR git\-merge (1),
 .BR sandbox\-exec (1),
 .BR clonefile (2)
