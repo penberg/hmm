@@ -5,6 +5,7 @@ hmm \- run commands in drafts of the working directory
 .B hmm
 .br
 .B hmm run
+.RB [ \-\-rm ]
 .RB [ \-n
 .IR name ]
 .RB [ \-w
@@ -84,6 +85,11 @@ When the command exits,
 prints where the draft is, and exits with the command's exit status.
 The draft stays until it is removed.
 .RS
+.TP
+.B \-\-rm
+Remove the draft when the command exits, rather than keeping it, as
+.B hmm rm
+would.
 .TP
 .BI \-n " name" "\fR, \fP\-\-name " name
 Name the draft

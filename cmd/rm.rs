@@ -39,7 +39,7 @@ impl Rm {
 
 /// Removes `draft`, unless a command is running in it, and the reference
 /// `hmm merge` made to its commits.
-fn remove(draft: &Draft) -> io::Result<()> {
+pub fn remove(draft: &Draft) -> io::Result<()> {
     let _lock = draft.lock()?;
     let origin = draft.origin();
     fs::remove_dir_all(&draft.dir)?;
