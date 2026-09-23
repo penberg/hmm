@@ -6,6 +6,7 @@
 mod darwin;
 
 mod cmd {
+    pub mod apply;
     pub mod diff;
     pub mod ls;
     pub mod rm;
@@ -42,6 +43,7 @@ enum Command {
     Run(cmd::run::Run),
     Ls(cmd::ls::Ls),
     Diff(cmd::diff::Diff),
+    Apply(cmd::apply::Apply),
     Rm(cmd::rm::Rm),
 }
 
@@ -52,6 +54,7 @@ fn main() -> ExitCode {
         Some(Command::Run(run)) => run.run(),
         Some(Command::Ls(ls)) => ls.run(),
         Some(Command::Diff(diff)) => diff.run(),
+        Some(Command::Apply(apply)) => apply.run(),
         Some(Command::Rm(rm)) => rm.run(),
     };
     match result {
@@ -148,6 +151,15 @@ impl Draft {
             _ => Err(io::Error::other(format!(
                 "{key} is the start of more than one draft's ID"
             ))),
+        }
+    }
+
+    /// The draft `key` refers to, as `find` finds it, or the latest of
+    /// `origin`'s drafts if there is no key.
+    pub fn pick(root: &Path, origin: &Path, key: Option<&str>) -> io::Result<Draft> {
+        match key {
+            Some(key) => Draft::find(root, origin, key),
+            None => Draft::latest(root, origin),
         }
     }
 

@@ -19,6 +19,10 @@ hmm \- run commands in drafts of the working directory
 .RB [ \-\-stat ]
 .RI [ draft ]
 .br
+.B hmm apply
+.RB [ \-\-check ]
+.RI [ draft ]
+.br
 .B hmm rm
 .IR draft ...
 .SH DESCRIPTION
@@ -111,6 +115,20 @@ only which files changed, and how much.
 If the directory is a git repository, what it ignores, such as build
 output, is left out.
 .TP
+.B hmm apply \fR[\fB\-\-check\fR] [\fIdraft\fR]
+Make the changes that
+.B hmm diff
+shows in the directory the draft was made from: all of them or, if any
+does not apply, because the directory has changed in the same places since
+the draft was made, none.
+Only files change: nothing is staged or committed.
+A draft that is already applied is left alone, and so is one in which a
+command is running.
+With
+.BR \-\-check ,
+only say whether the changes apply.
+The draft stays until it is removed.
+.TP
 .B hmm rm \fIdraft \fR...
 Remove the drafts given, and everything in them.
 A draft in which a command is running is not removed.
@@ -187,7 +205,9 @@ compares the draft with it.
 .IR base.index ", " tree.index ", " git/
 What
 .B hmm diff
-keeps to compare the two with git: its indexes of the clones, and, if the
+and
+.B hmm apply
+keep to compare the two with git: its indexes of the clones, and, if the
 directory is not a git repository, a repository of its own.
 .TP
 .I origin
@@ -213,7 +233,8 @@ Run Claude Code in a draft named
 .B hmm run \-n parser \-w ~/.claude claude
 .RE
 .PP
-See the drafts of the working directory, and remove one:
+See the drafts of the working directory, what one changed, apply it, and
+remove it:
 .PP
 .RS
 .nf
@@ -221,6 +242,8 @@ See the drafts of the working directory, and remove one:
 ID      NAME    STATE    AGE  ORIGIN
 k3xq9a  parser  done      2h  ~/src/penberg/dwim
 p7mw2d  \-       running   5m  ~/src/penberg/dwim
+.B $ hmm diff parser
+.B $ hmm apply parser
 .B $ hmm rm parser
 .fi
 .RE

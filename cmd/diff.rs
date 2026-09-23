@@ -28,10 +28,34 @@ impl Diff {
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
-        let draft = match &self.draft {
-            Some(key) => Draft::find(&root, &cwd, key)?,
-            None => Draft::latest(&root, &cwd)?,
-        };
+        let draft = Draft::pick(&root, &cwd, self.draft.as_deref())?;
+        let changes = Changes::of(&draft)?;
+        let stat = if self.stat { "--stat" } else { "--patch" };
+        let status = git(&changes.repo)
+            .args(["diff", stat, &changes.before, &changes.after])
+            .status()?;
+        Ok(if status.success() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        })
+    }
+}
+
+/// What changed in a draft: its base and its tree, recorded as trees in a
+/// repository.
+pub struct Changes {
+    /// The repository the trees are in.
+    pub repo: PathBuf,
+    /// The ID of the base's tree.
+    pub before: String,
+    /// The ID of the draft's tree.
+    pub after: String,
+}
+
+impl Changes {
+    /// Records what changed in `draft`.
+    pub fn of(draft: &Draft) -> io::Result<Changes> {
         let base = draft.base();
         if !base.is_dir() {
             return Err(io::Error::other(format!(
@@ -39,17 +63,38 @@ impl Diff {
                 draft.label()
             )));
         }
-        let tree = draft.tree()?;
-        let repo = repository(&draft)?;
+        let repo = repository(draft)?;
         let before = snapshot(&repo, &base, &draft.dir.join("base.index"))?;
-        let after = snapshot(&repo, &tree, &draft.dir.join("tree.index"))?;
-        let stat = if self.stat { "--stat" } else { "--patch" };
-        let status = git(&repo).args(["diff", stat, &before, &after]).status()?;
-        Ok(if status.success() {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::FAILURE
+        let after = snapshot(&repo, &draft.tree()?, &draft.dir.join("tree.index"))?;
+        Ok(Changes {
+            repo,
+            before,
+            after,
         })
+    }
+
+    /// The changes as a patch that `git apply` applies to the directory the
+    /// draft was made from, whatever the configuration says about how to
+    /// show a diff.
+    pub fn patch(&self) -> io::Result<Vec<u8>> {
+        let diff = git(&self.repo)
+            .args([
+                "diff",
+                "--binary",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-relative",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &self.before,
+                &self.after,
+            ])
+            .output()?;
+        if !diff.status.success() {
+            return Err(io::Error::other("git could not make a patch"));
+        }
+        Ok(diff.stdout)
     }
 }
 
@@ -82,7 +127,7 @@ fn repository(draft: &Draft) -> io::Result<PathBuf> {
 }
 
 /// A command that runs git on the repository `repo`.
-fn git(repo: &Path) -> Command {
+pub fn git(repo: &Path) -> Command {
     let mut git = Command::new("git");
     git.arg("--git-dir").arg(repo);
     for var in ["GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY"] {
