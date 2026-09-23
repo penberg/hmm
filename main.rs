@@ -6,6 +6,7 @@
 mod darwin;
 
 mod cmd {
+    pub mod diff;
     pub mod ls;
     pub mod rm;
     pub mod run;
@@ -40,6 +41,7 @@ struct Args {
 enum Command {
     Run(cmd::run::Run),
     Ls(cmd::ls::Ls),
+    Diff(cmd::diff::Diff),
     Rm(cmd::rm::Rm),
 }
 
@@ -49,6 +51,7 @@ fn main() -> ExitCode {
         None => cmd::ls::list(false),
         Some(Command::Run(run)) => run.run(),
         Some(Command::Ls(ls)) => ls.run(),
+        Some(Command::Diff(diff)) => diff.run(),
         Some(Command::Rm(rm)) => rm.run(),
     };
     match result {
@@ -77,10 +80,11 @@ const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// The number of letters in a draft's ID.
 const ID_LEN: usize = 6;
 
-/// A draft: a directory under the root named by a random ID, holding the
-/// clone, named as the directory it was cloned from; an `origin` file with
-/// that directory's path; and, if the draft was given one, a `name` file with
-/// its name. The command running in the draft holds a lock on the `origin`
+/// A draft: a directory under the root named by a random ID, holding two
+/// clones of a directory: `base`, as it was when the draft was made, and
+/// `tree/<name>`, named as the directory, which the command runs in and
+/// changes; an `origin` file with the directory's path; and, if the draft was
+/// given one, a `name` file with its name. The command running in the draft holds a lock on the `origin`
 /// file.
 pub struct Draft {
     pub id: String,
@@ -147,6 +151,19 @@ impl Draft {
         }
     }
 
+    /// The latest of `origin`'s drafts.
+    pub fn latest(root: &Path, origin: &Path) -> io::Result<Draft> {
+        Draft::all(root)?
+            .into_iter()
+            .rfind(|draft| draft.origin().is_ok_and(|o| o == origin))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("{} has no drafts", origin.display()),
+                )
+            })
+    }
+
     /// Every draft under `root`, oldest first.
     pub fn all(root: &Path) -> io::Result<Vec<Draft>> {
         let mut all = Vec::new();
@@ -181,10 +198,20 @@ impl Draft {
         self.dir.metadata()?.created()
     }
 
-    /// The clone, named as the directory it was cloned from.
+    /// The clone the command runs in, named as the directory it was cloned
+    /// from.
     pub fn tree(&self) -> io::Result<PathBuf> {
         let origin = self.origin()?;
-        Ok(self.dir.join(origin.file_name().unwrap_or("root".as_ref())))
+        Ok(self
+            .dir
+            .join("tree")
+            .join(origin.file_name().unwrap_or("root".as_ref())))
+    }
+
+    /// The clone of the directory as it was when the draft was made, which
+    /// the command cannot see: what the draft is compared with.
+    pub fn base(&self) -> PathBuf {
+        self.dir.join("base")
     }
 
     /// The draft as the user refers to it: its ID, and its name if it has

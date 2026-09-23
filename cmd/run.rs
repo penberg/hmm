@@ -40,8 +40,14 @@ impl Run {
         let cwd = env::current_dir()?.canonicalize()?;
         let draft = Draft::create(&root, &cwd, self.name.as_deref())?;
         let _lock = draft.lock()?;
+        // The tree is cloned from the base, so that both are the directory
+        // at the same moment.
         let tree = draft.tree()?;
-        if let Err(e) = darwin::clone(&cwd, &tree) {
+        let base = draft.base();
+        let cloned = darwin::clone(&cwd, &base)
+            .and_then(|()| fs::create_dir(draft.dir.join("tree")))
+            .and_then(|()| darwin::clone(&base, &tree));
+        if let Err(e) = cloned {
             let _ = fs::remove_dir_all(&draft.dir);
             return Err(io::Error::new(
                 e.kind(),

@@ -15,6 +15,10 @@ hmm \- run commands in drafts of the working directory
 .B hmm ls
 .RB [ \-a ]
 .br
+.B hmm diff
+.RB [ \-\-stat ]
+.RI [ draft ]
+.br
 .B hmm rm
 .IR draft ...
 .SH DESCRIPTION
@@ -97,6 +101,16 @@ With
 .BR \-a " (" \-\-all ),
 list the drafts of every directory.
 .TP
+.B hmm diff \fR[\fB\-\-stat\fR] [\fIdraft\fR]
+Show what changed in
+.I draft
+since it was made, or in the working directory's latest draft if none is
+given, as a patch; with
+.BR \-\-stat ,
+only which files changed, and how much.
+If the directory is a git repository, what it ignores, such as build
+output, is left out.
+.TP
 .B hmm rm \fIdraft \fR...
 Remove the drafts given, and everything in them.
 A draft in which a command is running is not removed.
@@ -160,8 +174,21 @@ The drafts, one directory each, named by ID.
 In each:
 .RS
 .TP
-.I <name>/
-The clone, named as the directory it was made from.
+.I tree/<name>/
+The clone the command runs in and changes, named as the directory it was
+made from.
+.TP
+.I base/
+A clone of the directory as it was when the draft was made, which the
+command cannot see:
+.B hmm diff
+compares the draft with it.
+.TP
+.IR base.index ", " tree.index ", " git/
+What
+.B hmm diff
+keeps to compare the two with git: its indexes of the clones, and, if the
+directory is not a git repository, a repository of its own.
 .TP
 .I origin
 The path of the directory it was made from.
