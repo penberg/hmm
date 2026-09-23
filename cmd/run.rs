@@ -5,12 +5,12 @@ use std::{
     env, fs, io,
     os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
-    process::{Command, ExitCode},
+    process::{Command, ExitCode, ExitStatus},
 };
 
 use argh::FromArgs;
 
-use crate::{Draft, darwin, git, root};
+use crate::{Draft, cmd::rm, darwin, git, root};
 
 /// Directories under the home directory that commands may write to, so that
 /// builds and package managers keep working.
@@ -31,6 +31,10 @@ pub struct Run {
     #[argh(option, short = 'w')]
     write: Vec<PathBuf>,
 
+    /// remove the draft when the command exits
+    #[argh(switch)]
+    rm: bool,
+
     /// the command to run and its arguments; the shell if none
     #[argh(positional, greedy)]
     command: Vec<String>,
@@ -38,12 +42,13 @@ pub struct Run {
 
 impl Run {
     /// Runs the command (the shell if none is given) in a new draft of the
-    /// working directory, and returns its exit code.
+    /// working directory, removing the draft afterwards with `--rm`, and
+    /// returns its exit code.
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
         let draft = Draft::create(&root, &cwd, self.name.as_deref())?;
-        let _lock = draft.lock()?;
+        let lock = draft.lock()?;
         if let Err(e) = git::make(&draft, &cwd) {
             let _ = fs::remove_dir_all(&draft.dir);
             return Err(io::Error::new(
@@ -51,19 +56,40 @@ impl Run {
                 format!("copying {}: {e}", cwd.display()),
             ));
         }
+        let result = self.confined(&root, &draft);
+        if self.rm {
+            drop(lock);
+            if let Err(e) = rm::remove(&draft) {
+                eprintln!("hmm: removing draft {}: {e}", draft.label());
+            }
+        }
+        let status = result?;
+        let code = status
+            .code()
+            .unwrap_or_else(|| 128 + status.signal().unwrap_or(0));
+        Ok(ExitCode::from(code as u8))
+    }
+
+    /// Runs the command in `draft`, confined to it, and waits for it to exit.
+    fn confined(&self, root: &Path, draft: &Draft) -> io::Result<ExitStatus> {
         let tree = draft.tree()?;
         eprintln!("hmm: draft {}: {}", draft.label(), tree.display());
         let command = if self.command.is_empty() {
             vec![env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())]
         } else {
-            self.command
+            self.command.clone()
         };
-        let status = confine(&root, &tree, &self.write, &command)?.status()?;
-        eprintln!("hmm: draft {}: {}", draft.label(), tree.display());
-        let code = status
-            .code()
-            .unwrap_or_else(|| 128 + status.signal().unwrap_or(0));
-        Ok(ExitCode::from(code as u8))
+        let mut child = confine(root, &tree, &self.write, &command)?.spawn()?;
+        // The terminal's signals reach the command too: `hmm` outlives it, as
+        // a shell does, to say where the draft is or remove it.
+        for signal in [libc::SIGINT, libc::SIGQUIT, libc::SIGHUP] {
+            unsafe { libc::signal(signal, libc::SIG_IGN) };
+        }
+        let status = child.wait()?;
+        if !self.rm {
+            eprintln!("hmm: draft {}: {}", draft.label(), tree.display());
+        }
+        Ok(status)
     }
 }
 

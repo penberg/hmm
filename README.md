@@ -46,7 +46,7 @@ hmm rm parser
 
 | Command | Description |
 | --- | --- |
-| `hmm run [-n name] [-w path]... [command...]` | Run a command (or your shell) in a new draft |
+| `hmm run [--rm] [-n name] [-w path]... [command...]` | Run a command (or your shell) in a new draft, removing it afterwards with `--rm` |
 | `hmm ls [-a]` | List drafts of the working directory, or of every directory with `-a` |
 | `hmm diff [--stat] [draft]` | Show what changed in a draft (the latest one by default) |
 | `hmm rm draft...` | Remove drafts |

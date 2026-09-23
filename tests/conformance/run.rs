@@ -1,6 +1,13 @@
 //! `hmm run`.
 
-use std::{fs, io::Write, process::Stdio};
+use std::{
+    fs,
+    io::{BufRead, BufReader, Write},
+    os::unix::process::CommandExt,
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
+};
 
 use crate::{World, assert_fails, need_sandbox, read, stderr, stdout, write};
 
@@ -169,6 +176,70 @@ fn a_name_is_letters_digits_dashes_underscores_and_dots() {
     }
     assert!(world.drafts().is_empty());
     world.run(&dir, &["-n", "Aa0-_.", "true"]);
+}
+
+#[test]
+fn removes_the_draft_with_rm() {
+    need_sandbox!();
+    let world = World::new();
+    let dir = world.dir("project");
+    let out = world.hmm(&dir, &["run", "--rm", "sh", "-c", "echo x > f; exit 3"]);
+    assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert_eq!(err.lines().count(), 1, "{err}");
+    let draft = world.draft_of(&dir, &err);
+    assert!(!draft.dir.exists());
+    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
+    assert!(!dir.join("f").exists());
+}
+
+#[test]
+fn removes_the_draft_with_rm_when_the_command_cannot_run() {
+    need_sandbox!();
+    let world = World::new();
+    let dir = world.dir("project");
+    let missing = world.home().join("missing");
+    let out = world.hmm(
+        &dir,
+        &["run", "--rm", "-w", missing.to_str().unwrap(), "true"],
+    );
+    assert_fails(&out, "missing");
+    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
+}
+
+#[test]
+fn removes_the_draft_with_rm_when_the_command_is_interrupted() {
+    need_sandbox!();
+    let world = World::new();
+    let dir = world.dir("project");
+    // As the terminal does, the interrupt goes to hmm and the command both.
+    let mut child = world
+        .hmm_command(
+            &dir,
+            &["run", "--rm", "sh", "-c", "touch started; exec sleep 60"],
+        )
+        .process_group(0)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stderr.as_mut().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let draft = world.draft_of(&dir, &line);
+    while !draft.tree.join("started").exists() {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let group = format!("-{}", child.id());
+    assert!(
+        Command::new("kill")
+            .args(["-INT", "--", &group])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(child.wait().unwrap().code(), Some(128 + 2));
+    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
 }
 
 #[test]
