@@ -2,7 +2,7 @@
 name = "hmm"
 version = "0.1.0"
 edition = "2024"
-description = "Run a command in a draft: a copy of the working directory it may write to"
+description = "Run a command in a workspace: a copy of the working directory it may write to"
 license = "MIT"
 
 [[bin]]

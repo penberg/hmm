@@ -1,16 +1,16 @@
-//! `hmm ls`, and `hmm` alone: lists drafts.
+//! `hmm ls`, and `hmm` alone: lists workspaces.
 
 use std::{env, io, path::Path, process::ExitCode, time::SystemTime};
 
 use argh::FromArgs;
 
-use crate::{Draft, root};
+use crate::{Workspace, root};
 
-/// List the drafts of the working directory.
+/// List the workspaces of the working directory.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "ls")]
 pub struct Ls {
-    /// list the drafts of every directory
+    /// list the workspaces of every directory
     #[argh(switch, short = 'a')]
     all: bool,
 }
@@ -21,30 +21,34 @@ impl Ls {
     }
 }
 
-/// Lists the drafts of the working directory, or of every directory if
+/// Lists the workspaces of the working directory, or of every directory if
 /// `all` is set.
 pub fn list(all: bool) -> io::Result<ExitCode> {
     let cwd = env::current_dir()?.canonicalize()?;
     let home = dirs::home_dir();
     let mut rows = Vec::new();
-    for draft in Draft::all(&root()?)? {
-        // A draft without an origin is still being created.
-        let Ok(origin) = draft.origin() else {
+    for workspace in Workspace::all(&root()?)? {
+        // A workspace without an origin is still being created.
+        let Ok(origin) = workspace.origin() else {
             continue;
         };
         if !all && origin != cwd {
             continue;
         }
-        let state = if draft.running() { "running" } else { "done" };
-        let age = draft
+        let state = if workspace.running() {
+            "running"
+        } else {
+            "done"
+        };
+        let age = workspace
             .created()
             .ok()
             .and_then(|created| SystemTime::now().duration_since(created).ok())
             .map(|age| short(age.as_secs()))
             .unwrap_or_default();
         rows.push([
-            draft.id.clone(),
-            draft.name().unwrap_or_else(|| "-".to_string()),
+            workspace.id.clone(),
+            workspace.name().unwrap_or_else(|| "-".to_string()),
             state.to_string(),
             age,
             tilde(&origin, home.as_deref()),

@@ -13,11 +13,11 @@ fn makes_the_changes_in_the_directory_without_staging_or_committing() {
     world.git(&dir, &["add", "c"]);
     world.git(&dir, &["commit", "--quiet", "-m", "c"]);
     let head = world.git(&dir, &["rev-parse", "HEAD"]);
-    let draft = world.sh(&dir, "echo two > a && echo new > b && rm c");
+    let workspace = world.sh(&dir, "echo two > a && echo new > b && rm c");
     let out = world.hmm(&dir, &["apply"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(
-        stderr(&out).contains(&format!("applied draft {}", draft.id)),
+        stderr(&out).contains(&format!("applied workspace {}", workspace.id)),
         "{}",
         stderr(&out)
     );
@@ -72,7 +72,7 @@ fn works_in_a_directory_that_is_not_a_repository() {
 }
 
 #[test]
-fn applies_the_draft_given() {
+fn applies_the_workspace_given() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -120,11 +120,11 @@ fn check_says_whether_the_changes_apply_and_changes_nothing() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
-    let draft = world.sh(&dir, "echo two > a && echo new > b");
+    let workspace = world.sh(&dir, "echo two > a && echo new > b");
     let out = world.hmm(&dir, &["apply", "--check"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(
-        stderr(&out).contains(&format!("draft {} applies to", draft.id)),
+        stderr(&out).contains(&format!("workspace {} applies to", workspace.id)),
         "{}",
         stderr(&out)
     );
@@ -136,7 +136,7 @@ fn check_says_whether_the_changes_apply_and_changes_nothing() {
 }
 
 #[test]
-fn leaves_an_applied_draft_alone() {
+fn leaves_an_applied_workspace_alone() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -150,7 +150,7 @@ fn leaves_an_applied_draft_alone() {
 }
 
 #[test]
-fn says_so_when_the_draft_changed_nothing() {
+fn says_so_when_the_workspace_changed_nothing() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -161,23 +161,23 @@ fn says_so_when_the_draft_changed_nothing() {
 }
 
 #[test]
-fn keeps_the_draft() {
+fn keeps_the_workspace() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
-    let draft = world.sh(&dir, "echo two > a");
+    let workspace = world.sh(&dir, "echo two > a");
     assert!(world.hmm(&dir, &["apply"]).status.success());
-    assert!(draft.tree.is_dir());
-    assert_eq!(world.drafts(), [draft.id]);
+    assert!(workspace.tree.is_dir());
+    assert_eq!(world.workspaces(), [workspace.id]);
 }
 
 #[test]
-fn leaves_a_draft_in_which_a_command_is_running_alone() {
+fn leaves_a_workspace_in_which_a_command_is_running_alone() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
     let running = world.start(&dir, &[]);
-    write(&running.draft.tree, "a", "two\n");
+    write(&running.workspace.tree, "a", "two\n");
     assert_fails(&world.hmm(&dir, &["apply"]), "is running");
     assert_eq!(read(&dir, "a"), "one\n");
     running.stop();
@@ -186,9 +186,9 @@ fn leaves_a_draft_in_which_a_command_is_running_alone() {
 }
 
 #[test]
-fn fails_for_a_draft_that_does_not_exist() {
+fn fails_for_a_workspace_that_does_not_exist() {
     let world = World::new();
     let dir = world.dir("project");
-    assert_fails(&world.hmm(&dir, &["apply", "nope"]), "no draft nope");
-    assert_fails(&world.hmm(&dir, &["apply"]), "has no drafts");
+    assert_fails(&world.hmm(&dir, &["apply", "nope"]), "no workspace nope");
+    assert_fails(&world.hmm(&dir, &["apply"]), "has no workspaces");
 }

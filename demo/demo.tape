@@ -1,4 +1,4 @@
-# Records Claude Code committing in a draft, and hmm merging the commit.
+# Records Claude Code committing in a workspace, and hmm merging the commit.
 #
 #   demo/record.sh
 #

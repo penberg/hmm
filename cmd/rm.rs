@@ -1,4 +1,4 @@
-//! `hmm rm`: removes drafts.
+//! `hmm rm`: removes workspaces.
 
 use std::{
     env, fs, io,
@@ -7,27 +7,27 @@ use std::{
 
 use argh::FromArgs;
 
-use crate::{Draft, git, root};
+use crate::{Workspace, git, root};
 
-/// Remove drafts, and everything in them.
+/// Remove workspaces, and everything in them.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "rm")]
 pub struct Rm {
-    /// the drafts to remove, by name, ID, or the start of an ID
+    /// the workspaces to remove, by name, ID, or the start of an ID
     #[argh(positional)]
-    drafts: Vec<String>,
+    workspaces: Vec<String>,
 }
 
 impl Rm {
     pub fn run(self) -> io::Result<ExitCode> {
-        if self.drafts.is_empty() {
-            return Err(io::Error::other("rm needs the drafts to remove"));
+        if self.workspaces.is_empty() {
+            return Err(io::Error::other("rm needs the workspaces to remove"));
         }
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
         let mut code = ExitCode::SUCCESS;
-        for key in &self.drafts {
-            let result = Draft::find(&root, &cwd, key).and_then(|draft| remove(&draft));
+        for key in &self.workspaces {
+            let result = Workspace::find(&root, &cwd, key).and_then(|workspace| remove(&workspace));
             if let Err(e) = result {
                 eprintln!("hmm: {e}");
                 code = ExitCode::FAILURE;
@@ -37,19 +37,19 @@ impl Rm {
     }
 }
 
-/// Removes `draft`, unless a command is running in it, and the reference
+/// Removes `workspace`, unless a command is running in it, and the reference
 /// `hmm merge` made to its commits.
-pub fn remove(draft: &Draft) -> io::Result<()> {
-    let _lock = draft.lock()?;
-    let origin = draft.origin();
-    fs::remove_dir_all(&draft.dir)?;
+pub fn remove(workspace: &Workspace) -> io::Result<()> {
+    let _lock = workspace.lock()?;
+    let origin = workspace.origin();
+    fs::remove_dir_all(&workspace.dir)?;
     if let Ok(origin) = origin
         && git::toplevel(&origin).is_some()
     {
         let _ = git::git()
             .arg("-C")
             .arg(&origin)
-            .args(["update-ref", "-d", &format!("refs/hmm/{}", draft.id)])
+            .args(["update-ref", "-d", &format!("refs/hmm/{}", workspace.id)])
             .stderr(Stdio::null())
             .status();
     }

@@ -1,12 +1,12 @@
-//! `hmm diff`: shows what changed in a draft since it was made.
+//! `hmm diff`: shows what changed in a workspace since it was made.
 
 use std::{env, io, process::ExitCode};
 
 use argh::FromArgs;
 
-use crate::{Draft, git::Changes, root};
+use crate::{Workspace, git::Changes, root};
 
-/// Show what changed in a draft since it was made.
+/// Show what changed in a workspace since it was made.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "diff")]
 pub struct Diff {
@@ -14,18 +14,18 @@ pub struct Diff {
     #[argh(switch)]
     stat: bool,
 
-    /// the draft, by name, ID, or the start of an ID; the working
+    /// the workspace, by name, ID, or the start of an ID; the working
     /// directory's latest if none
     #[argh(positional)]
-    draft: Option<String>,
+    workspace: Option<String>,
 }
 
 impl Diff {
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
-        let draft = Draft::pick(&root, &cwd, self.draft.as_deref())?;
-        let changes = Changes::of(&draft)?;
+        let workspace = Workspace::pick(&root, &cwd, self.workspace.as_deref())?;
+        let changes = Changes::of(&workspace)?;
         let stat = if self.stat { "--stat" } else { "--patch" };
         let status = changes
             .repo

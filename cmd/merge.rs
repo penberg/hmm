@@ -1,4 +1,4 @@
-//! `hmm merge`: merges the commits made in a draft into the branch the
+//! `hmm merge`: merges the commits made in a workspace into the branch the
 //! directory it was made from is on.
 
 use std::{env, fs, io, path::Path, process::ExitCode};
@@ -6,45 +6,45 @@ use std::{env, fs, io, path::Path, process::ExitCode};
 use argh::FromArgs;
 
 use crate::{
-    Draft,
+    Workspace,
     cmd::run::confine,
     git::{self, Changes},
     root,
 };
 
-/// Merge the commits made in a draft into the branch the directory it was
+/// Merge the commits made in a workspace into the branch the directory it was
 /// made from is on.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "merge")]
 pub struct Merge {
-    /// the draft, by name, ID, or the start of an ID; the working
+    /// the workspace, by name, ID, or the start of an ID; the working
     /// directory's latest if none
     #[argh(positional)]
-    draft: Option<String>,
+    workspace: Option<String>,
 }
 
 impl Merge {
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
-        let draft = Draft::pick(&root, &cwd, self.draft.as_deref())?;
+        let workspace = Workspace::pick(&root, &cwd, self.workspace.as_deref())?;
         // A command still running could be halfway through a commit.
-        let _lock = draft.lock()?;
-        let origin = draft.origin()?;
-        if git::toplevel(&origin).is_none() || !draft.dir.join("fork").exists() {
+        let _lock = workspace.lock()?;
+        let origin = workspace.origin()?;
+        if git::toplevel(&origin).is_none() || !workspace.dir.join("fork").exists() {
             return Err(io::Error::other(format!(
-                "draft {} was not made from the top of a git repository: hmm apply \
+                "workspace {} was not made from the top of a git repository: hmm apply \
                  applies its changes",
-                draft.label()
+                workspace.label()
             )));
         }
-        let tree = draft.tree()?;
-        let head = git::head(&draft);
+        let tree = workspace.tree()?;
+        let head = git::head(&workspace);
 
-        // The draft's repository is read by git in the sandbox, as the command
-        // in the draft may have changed its configuration: git there packs the
-        // commits made since the draft was made into a bundle, which is only
-        // data, and git here fetches them from it.
+        // The workspace's repository is read by git in the sandbox, as the
+        // command in the workspace may have changed its configuration: git
+        // there packs the commits made since the workspace was made into a
+        // bundle, which is only data, and git here fetches them from it.
         let tip = confine(
             &root,
             &tree,
@@ -55,8 +55,8 @@ impl Merge {
         let tip = String::from_utf8_lossy(&tip.stdout).trim().to_string();
         if !is_commit(&tip) || head.as_deref() == Some(tip.as_str()) {
             eprintln!(
-                "hmm: draft {} has no commits to merge: hmm apply applies its changes",
-                draft.label()
+                "hmm: workspace {} has no commits to merge: hmm apply applies its changes",
+                workspace.label()
             );
             return Ok(ExitCode::FAILURE);
         }
@@ -73,16 +73,16 @@ impl Merge {
             create.push(format!("^{head}"));
         }
         let created = confine(&root, &tree, &[], &create)?.status()?;
-        let fetched = created.success() && fetch(&origin, &bundle, &draft.id)?;
+        let fetched = created.success() && fetch(&origin, &bundle, &workspace.id)?;
         let _ = fs::remove_file(&bundle);
         if !fetched {
             return Err(io::Error::other(format!(
-                "could not take the commits from draft {}",
-                draft.label()
+                "could not take the commits from workspace {}",
+                workspace.label()
             )));
         }
 
-        let reference = format!("refs/hmm/{}", draft.id);
+        let reference = format!("refs/hmm/{}", workspace.id);
         let committed = git::git()
             .arg("-C")
             .arg(&origin)
@@ -91,17 +91,17 @@ impl Merge {
         let committed = String::from_utf8_lossy(&committed.stdout)
             .trim()
             .to_string();
-        if Changes::of(&draft)?.after != committed {
+        if Changes::of(&workspace)?.after != committed {
             eprintln!(
-                "hmm: draft {} has changes it did not commit, which are not merged",
-                draft.label()
+                "hmm: workspace {} has changes it did not commit, which are not merged",
+                workspace.label()
             );
         }
         let merged = git::git()
             .arg("-C")
             .arg(&origin)
             .args(["merge", "--no-edit", "-m"])
-            .arg(format!("Merge draft {}", draft.label()))
+            .arg(format!("Merge workspace {}", workspace.label()))
             .arg(&reference)
             .status()?;
         Ok(if merged.success() {
@@ -115,7 +115,7 @@ impl Merge {
 /// Fetches the commits in `bundle` into `origin`'s repository as
 /// `refs/hmm/<id>`, checking every object, and returns whether it could.
 fn fetch(origin: &Path, bundle: &Path, id: &str) -> io::Result<bool> {
-    // The bundle is in the draft, where the command could have left
+    // The bundle is in the workspace, where the command could have left
     // something else under its name.
     if !fs::symlink_metadata(bundle).is_ok_and(|m| m.file_type().is_file()) {
         return Ok(false);

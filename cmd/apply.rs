@@ -1,5 +1,5 @@
-//! `hmm apply`: applies what changed in a draft to the directory it was made
-//! from.
+//! `hmm apply`: applies what changed in a workspace to the directory it was
+//! made from.
 
 use std::{
     env,
@@ -11,12 +11,12 @@ use std::{
 use argh::FromArgs;
 
 use crate::{
-    Draft,
+    Workspace,
     git::{Changes, Repo},
     root,
 };
 
-/// Apply what changed in a draft to the directory it was made from.
+/// Apply what changed in a workspace to the directory it was made from.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "apply")]
 pub struct Apply {
@@ -24,23 +24,23 @@ pub struct Apply {
     #[argh(switch)]
     check: bool,
 
-    /// the draft, by name, ID, or the start of an ID; the working
+    /// the workspace, by name, ID, or the start of an ID; the working
     /// directory's latest if none
     #[argh(positional)]
-    draft: Option<String>,
+    workspace: Option<String>,
 }
 
 impl Apply {
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
         let cwd = env::current_dir()?.canonicalize()?;
-        let draft = Draft::pick(&root, &cwd, self.draft.as_deref())?;
+        let workspace = Workspace::pick(&root, &cwd, self.workspace.as_deref())?;
         // A command still running could be halfway through a change.
-        let _lock = draft.lock()?;
-        let origin = draft.origin()?;
-        let changes = Changes::of(&draft)?;
+        let _lock = workspace.lock()?;
+        let origin = workspace.origin()?;
+        let changes = Changes::of(&workspace)?;
         if changes.before == changes.after {
-            eprintln!("hmm: draft {} changed nothing", draft.label());
+            eprintln!("hmm: workspace {} changed nothing", workspace.label());
             return Ok(ExitCode::SUCCESS);
         }
         let patch = changes.patch()?;
@@ -52,8 +52,8 @@ impl Apply {
             false,
         )? {
             eprintln!(
-                "hmm: draft {} is already applied to {}",
-                draft.label(),
+                "hmm: workspace {} is already applied to {}",
+                workspace.label(),
                 origin.display()
             );
             return Ok(ExitCode::SUCCESS);
@@ -61,21 +61,21 @@ impl Apply {
         let options: &[&str] = if self.check { &["--check"] } else { &[] };
         if !apply(&changes.repo, &origin, &patch, options, true)? {
             return Err(io::Error::other(format!(
-                "draft {} does not apply to {}, which is unchanged",
-                draft.label(),
+                "workspace {} does not apply to {}, which is unchanged",
+                workspace.label(),
                 origin.display()
             )));
         }
         if self.check {
             eprintln!(
-                "hmm: draft {} applies to {}",
-                draft.label(),
+                "hmm: workspace {} applies to {}",
+                workspace.label(),
                 origin.display()
             );
         } else {
             eprintln!(
-                "hmm: applied draft {} to {}",
-                draft.label(),
+                "hmm: applied workspace {} to {}",
+                workspace.label(),
                 origin.display()
             );
         }

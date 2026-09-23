@@ -7,14 +7,14 @@ fn fast_forwards_when_the_branch_has_not_moved() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
-    let draft = world.sh(&dir, "echo two > a && git commit --quiet -am two");
-    let tip = world.git(&draft.tree, &["rev-parse", "HEAD"]);
+    let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
+    let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
     let out = world.hmm(&dir, &["merge"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(world.git(&dir, &["rev-parse", "HEAD"]), tip);
     assert_eq!(world.git(&dir, &["branch", "--show-current"]), "main\n");
     assert_eq!(read(&dir, "a"), "two\n");
-    let reference = format!("refs/hmm/{}", draft.id);
+    let reference = format!("refs/hmm/{}", workspace.id);
     assert_eq!(world.git(&dir, &["rev-parse", &reference]), tip);
 }
 
@@ -23,8 +23,8 @@ fn makes_a_merge_commit_when_the_branch_has_moved() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
-    let draft = world.sh(&dir, "echo two > a && git commit --quiet -am two");
-    let tip = world.git(&draft.tree, &["rev-parse", "HEAD"]);
+    let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
+    let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
     write(&dir, "b", "b\n");
     world.git(&dir, &["add", "b"]);
     world.git(&dir, &["commit", "--quiet", "-m", "b"]);
@@ -35,18 +35,18 @@ fn makes_a_merge_commit_when_the_branch_has_moved() {
     assert_eq!(world.git(&dir, &["rev-parse", "HEAD^2"]), tip);
     assert_eq!(
         world.git(&dir, &["log", "-1", "--format=%s"]),
-        format!("Merge draft {}\n", draft.id)
+        format!("Merge workspace {}\n", workspace.id)
     );
     assert_eq!(read(&dir, "a"), "two\n");
     assert_eq!(read(&dir, "b"), "b\n");
 }
 
 #[test]
-fn merges_the_draft_given() {
+fn merges_the_workspace_given() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
-    let draft = world.run(
+    let workspace = world.run(
         &dir,
         &[
             "-n",
@@ -66,7 +66,7 @@ fn merges_the_draft_given() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         world.git(&dir, &["log", "-1", "--format=%s"]),
-        format!("Merge draft {} (feature)\n", draft.id)
+        format!("Merge workspace {} (feature)\n", workspace.id)
     );
     assert_eq!(read(&dir, "b"), "feature\n");
     assert!(!dir.join("c").exists());
@@ -145,14 +145,17 @@ fn fails_for_a_directory_inside_a_repository() {
 }
 
 #[test]
-fn leaves_a_draft_in_which_a_command_is_running_alone() {
+fn leaves_a_workspace_in_which_a_command_is_running_alone() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
     let head = world.git(&dir, &["rev-parse", "HEAD"]);
     let running = world.start(&dir, &[]);
-    write(&running.draft.tree, "a", "two\n");
-    world.git(&running.draft.tree, &["commit", "--quiet", "-am", "two"]);
+    write(&running.workspace.tree, "a", "two\n");
+    world.git(
+        &running.workspace.tree,
+        &["commit", "--quiet", "-am", "two"],
+    );
     assert_fails(&world.hmm(&dir, &["merge"]), "is running");
     assert_eq!(world.git(&dir, &["rev-parse", "HEAD"]), head);
     running.stop();

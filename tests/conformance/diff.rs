@@ -42,7 +42,7 @@ fn stat_shows_only_which_files_changed_and_how_much() {
 }
 
 #[test]
-fn shows_the_latest_draft_or_the_one_given() {
+fn shows_the_latest_workspace_or_the_one_given() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -60,16 +60,19 @@ fn shows_the_latest_draft_or_the_one_given() {
 }
 
 #[test]
-fn shows_a_draft_of_another_directory_by_id() {
+fn shows_a_workspace_of_another_directory_by_id() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
     let other = world.dir("other");
-    let draft = world.run(&dir, &["-n", "feature", "sh", "-c", "echo two > a"]);
-    let out = world.hmm(&other, &["diff", &draft.id]);
+    let workspace = world.run(&dir, &["-n", "feature", "sh", "-c", "echo two > a"]);
+    let out = world.hmm(&other, &["diff", &workspace.id]);
     assert!(stdout(&out).contains("+two"), "{}", stderr(&out));
     // Names are the directory's own.
-    assert_fails(&world.hmm(&other, &["diff", "feature"]), "no draft feature");
+    assert_fails(
+        &world.hmm(&other, &["diff", "feature"]),
+        "no workspace feature",
+    );
 }
 
 #[test]
@@ -90,7 +93,7 @@ fn leaves_out_what_git_ignores() {
 }
 
 #[test]
-fn leaves_out_what_changed_before_the_draft_was_made() {
+fn leaves_out_what_changed_before_the_workspace_was_made() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -116,7 +119,7 @@ fn leaves_out_what_changed_in_the_directory_since() {
 }
 
 #[test]
-fn shows_what_was_committed_in_the_draft() {
+fn shows_what_was_committed_in_the_workspace() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
@@ -151,15 +154,15 @@ fn works_in_a_directory_that_is_not_a_repository() {
 }
 
 #[test]
-fn fails_for_a_draft_that_does_not_exist() {
+fn fails_for_a_workspace_that_does_not_exist() {
     let world = World::new();
     let dir = world.dir("project");
-    assert_fails(&world.hmm(&dir, &["diff", "nope"]), "no draft nope");
+    assert_fails(&world.hmm(&dir, &["diff", "nope"]), "no workspace nope");
 }
 
 #[test]
-fn fails_without_drafts() {
+fn fails_without_workspaces() {
     let world = World::new();
     let dir = world.dir("project");
-    assert_fails(&world.hmm(&dir, &["diff"]), "has no drafts");
+    assert_fails(&world.hmm(&dir, &["diff"]), "has no workspaces");
 }

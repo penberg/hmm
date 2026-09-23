@@ -30,7 +30,7 @@ fn exits_with_128_plus_the_signal_that_ended_the_command() {
 }
 
 #[test]
-fn prints_where_the_draft_is_before_and_after() {
+fn prints_where_the_workspace_is_before_and_after() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
@@ -39,8 +39,8 @@ fn prints_where_the_draft_is_before_and_after() {
     let lines: Vec<String> = stderr(&out).lines().map(String::from).collect();
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert_eq!(lines[0], lines[1]);
-    let [id] = &world.drafts()[..] else {
-        panic!("not one draft: {:?}", world.drafts());
+    let [id] = &world.workspaces()[..] else {
+        panic!("not one workspace: {:?}", world.workspaces());
     };
     assert_eq!(id.len(), 6);
     assert!(
@@ -53,7 +53,7 @@ fn prints_where_the_draft_is_before_and_after() {
         .unwrap()
         .join(id)
         .join("tree/project");
-    assert_eq!(lines[0], format!("hmm: draft {id}: {}", tree.display()));
+    assert_eq!(lines[0], format!("hmm: workspace {id}: {}", tree.display()));
 }
 
 #[test]
@@ -85,8 +85,8 @@ fn runs_the_shell_without_a_command() {
         .unwrap();
     let out = child.wait_with_output().unwrap();
     assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
-    let draft = world.draft_of(&dir, &stderr(&out));
-    assert_eq!(read(&draft.tree, "f"), "shell\n");
+    let workspace = world.workspace_of(&dir, &stderr(&out));
+    assert_eq!(read(&workspace.tree, "f"), "shell\n");
 }
 
 #[test]
@@ -108,8 +108,8 @@ fn runs_the_command_in_a_copy_of_everything_in_the_directory() {
         ],
     );
     assert!(out.status.success(), "{}", stderr(&out));
-    let draft = world.draft_of(&dir, &stderr(&out));
-    let tree = draft.tree.display().to_string();
+    let workspace = world.workspace_of(&dir, &stderr(&out));
+    let tree = workspace.tree.display().to_string();
     assert_eq!(
         stdout(&out),
         format!("{tree}\nuncommitted\nuntracked\nbuilt\n{tree}\n")
@@ -117,52 +117,52 @@ fn runs_the_command_in_a_copy_of_everything_in_the_directory() {
 }
 
 #[test]
-fn changes_stay_in_the_draft() {
+fn changes_stay_in_the_workspace() {
     need_sandbox!();
     let world = World::new();
     let dir = world.repo("project");
     write(&dir, "b", "b\n");
-    let draft = world.sh(&dir, "echo two > a && echo new > new && rm b");
+    let workspace = world.sh(&dir, "echo two > a && echo new > new && rm b");
     assert_eq!(read(&dir, "a"), "one\n");
     assert_eq!(read(&dir, "b"), "b\n");
     assert!(!dir.join("new").exists());
-    assert_eq!(read(&draft.tree, "a"), "two\n");
-    assert_eq!(read(&draft.tree, "new"), "new\n");
-    assert!(!draft.tree.join("b").exists());
-    assert_eq!(read(&draft.dir, "origin"), dir.display().to_string());
-    assert!(!draft.dir.join("name").exists());
+    assert_eq!(read(&workspace.tree, "a"), "two\n");
+    assert_eq!(read(&workspace.tree, "new"), "new\n");
+    assert!(!workspace.tree.join("b").exists());
+    assert_eq!(read(&workspace.dir, "origin"), dir.display().to_string());
+    assert!(!workspace.dir.join("name").exists());
 }
 
 #[test]
-fn names_a_draft() {
+fn names_a_workspace() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
-    let draft = world.run(&dir, &["-n", "parser", "true"]);
-    assert_eq!(read(&draft.dir, "name"), "parser");
+    let workspace = world.run(&dir, &["-n", "parser", "true"]);
+    assert_eq!(read(&workspace.dir, "name"), "parser");
     let out = world.hmm(&dir, &["ls"]);
     let row = stdout(&out)
         .lines()
-        .find(|line| line.starts_with(&draft.id))
+        .find(|line| line.starts_with(&workspace.id))
         .map(String::from)
         .unwrap();
     assert_eq!(row.split_whitespace().nth(1), Some("parser"));
-    let draft = world.run(&dir, &["--name", "lexer", "true"]);
-    assert_eq!(read(&draft.dir, "name"), "lexer");
+    let workspace = world.run(&dir, &["--name", "lexer", "true"]);
+    assert_eq!(read(&workspace.dir, "name"), "lexer");
 }
 
 #[test]
-fn a_name_is_unique_among_the_directorys_drafts() {
+fn a_name_is_unique_among_the_directorys_workspaces() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
     let other = world.dir("other");
     world.run(&dir, &["-n", "parser", "true"]);
     let out = world.hmm(&dir, &["run", "-n", "parser", "true"]);
-    assert_fails(&out, "already has a draft named parser");
-    assert_eq!(world.drafts().len(), 1);
+    assert_fails(&out, "already has a workspace named parser");
+    assert_eq!(world.workspaces().len(), 1);
     world.run(&other, &["-n", "parser", "true"]);
-    assert_eq!(world.drafts().len(), 2);
+    assert_eq!(world.workspaces().len(), 2);
 }
 
 #[test]
@@ -172,14 +172,14 @@ fn a_name_is_letters_digits_dashes_underscores_and_dots() {
     let dir = world.dir("project");
     for name in ["a/b", "a b", "", "é", "a:b"] {
         let out = world.hmm(&dir, &["run", "-n", name, "true"]);
-        assert_fails(&out, "a draft's name is");
+        assert_fails(&out, "a workspace's name is");
     }
-    assert!(world.drafts().is_empty());
+    assert!(world.workspaces().is_empty());
     world.run(&dir, &["-n", "Aa0-_.", "true"]);
 }
 
 #[test]
-fn removes_the_draft_with_rm() {
+fn removes_the_workspace_with_rm() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
@@ -187,14 +187,14 @@ fn removes_the_draft_with_rm() {
     assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
     let err = stderr(&out);
     assert_eq!(err.lines().count(), 1, "{err}");
-    let draft = world.draft_of(&dir, &err);
-    assert!(!draft.dir.exists());
-    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
+    let workspace = world.workspace_of(&dir, &err);
+    assert!(!workspace.dir.exists());
+    assert!(world.workspaces().is_empty(), "{:?}", world.workspaces());
     assert!(!dir.join("f").exists());
 }
 
 #[test]
-fn removes_the_draft_with_rm_when_the_command_cannot_run() {
+fn removes_the_workspace_with_rm_when_the_command_cannot_run() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
@@ -204,11 +204,11 @@ fn removes_the_draft_with_rm_when_the_command_cannot_run() {
         &["run", "--rm", "-w", missing.to_str().unwrap(), "true"],
     );
     assert_fails(&out, "missing");
-    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
+    assert!(world.workspaces().is_empty(), "{:?}", world.workspaces());
 }
 
 #[test]
-fn removes_the_draft_with_rm_when_the_command_is_interrupted() {
+fn removes_the_workspace_with_rm_when_the_command_is_interrupted() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
@@ -226,8 +226,8 @@ fn removes_the_draft_with_rm_when_the_command_is_interrupted() {
     BufReader::new(child.stderr.as_mut().unwrap())
         .read_line(&mut line)
         .unwrap();
-    let draft = world.draft_of(&dir, &line);
-    while !draft.tree.join("started").exists() {
+    let workspace = world.workspace_of(&dir, &line);
+    while !workspace.tree.join("started").exists() {
         thread::sleep(Duration::from_millis(10));
     }
     let group = format!("-{}", child.id());
@@ -239,11 +239,11 @@ fn removes_the_draft_with_rm_when_the_command_is_interrupted() {
             .success()
     );
     assert_eq!(child.wait().unwrap().code(), Some(128 + 2));
-    assert!(world.drafts().is_empty(), "{:?}", world.drafts());
+    assert!(world.workspaces().is_empty(), "{:?}", world.workspaces());
 }
 
 #[test]
-fn the_command_writes_only_to_the_draft() {
+fn the_command_writes_only_to_the_workspace() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");
@@ -348,7 +348,7 @@ fn the_command_cannot_read_secrets() {
 }
 
 #[test]
-fn the_command_cannot_read_or_write_other_drafts() {
+fn the_command_cannot_read_or_write_other_workspaces() {
     need_sandbox!();
     let world = World::new();
     let dir = world.dir("project");

@@ -1,11 +1,11 @@
-//! Git, as `hmm` uses it: to record what a directory was when a draft was
-//! made from it, and to compare the draft with that.
+//! Git, as `hmm` uses it: to record what a directory was when a workspace was
+//! made from it, and to compare the workspace with that.
 //!
-//! Git always runs outside the sandbox here, so it never uses the repository
-//! in a draft's tree: its configuration can make git run any command, and the
-//! command in the draft may have changed it. It uses the repository of the
-//! directory the draft was made from, or, if that is not one, the draft's
-//! own.
+//! Git always runs outside the sandbox here, so it never uses the repository in
+//! a workspace's tree: its configuration can make git run any command, and the
+//! command in the workspace may have changed it. It uses the repository of the
+//! directory the workspace was made from, or, if that is not one, the
+//! workspace's own.
 
 use std::{
     fs, io,
@@ -13,7 +13,7 @@ use std::{
     process::Command,
 };
 
-use crate::{Draft, darwin};
+use crate::{Workspace, darwin};
 
 /// The variables that would point git at another repository than the one it
 /// is given.
@@ -68,7 +68,7 @@ pub struct Repo {
     dir: PathBuf,
     /// Where the objects git makes go, and the repository's own objects,
     /// when the two are kept apart, so that the directory's repository gets
-    /// none of the objects made for a draft.
+    /// none of the objects made for a workspace.
     objects: Option<(PathBuf, PathBuf)>,
 }
 
@@ -116,19 +116,19 @@ impl Repo {
     }
 }
 
-/// Makes `draft` of `origin`: records what `origin` is, then clones it into
-/// the draft's tree.
+/// Makes `workspace` of `origin`: records what `origin` is, then clones it into
+/// the workspace's tree.
 ///
 /// If `origin` is the top of a repository, what it is is the commit it is
 /// at, in `head`, and the tree of its files, uncommitted changes included, in
 /// `fork`, made from a copy of its index so that only the files changed since
 /// it was written are read. Otherwise, it is a clone, `base`, which the tree
 /// is cloned from, so that both are the directory at the same moment.
-pub fn make(draft: &Draft, origin: &Path) -> io::Result<()> {
-    let tree = draft.tree()?;
-    fs::create_dir(draft.dir.join("tree"))?;
+pub fn make(workspace: &Workspace, origin: &Path) -> io::Result<()> {
+    let tree = workspace.tree()?;
+    fs::create_dir(workspace.dir.join("tree"))?;
     let Some((dir, objects)) = toplevel(origin) else {
-        let base = draft.base();
+        let base = workspace.base();
         darwin::clone(origin, &base)?;
         return darwin::clone(&base, &tree);
     };
@@ -138,50 +138,51 @@ pub fn make(draft: &Draft, origin: &Path) -> io::Result<()> {
         .args(["rev-parse", "--verify", "--quiet", "HEAD"])
         .output()?;
     if head.status.success() {
-        fs::write(draft.dir.join("head"), &head.stdout)?;
+        fs::write(workspace.dir.join("head"), &head.stdout)?;
     }
-    let index = draft.dir.join("fork.index");
+    let index = workspace.dir.join("fork.index");
     if let Err(e) = fs::copy(dir.join("index"), &index)
         && e.kind() != io::ErrorKind::NotFound
     {
         return Err(e);
     }
-    let new = draft.dir.join("objects");
+    let new = workspace.dir.join("objects");
     fs::create_dir(&new)?;
     let repo = Repo {
         dir,
         objects: Some((new, objects)),
     };
     let fork = repo.snapshot(origin, &index)?;
-    fs::write(draft.dir.join("fork"), fork)?;
+    fs::write(workspace.dir.join("fork"), fork)?;
     darwin::clone(origin, &tree)
 }
 
-/// The commit the directory was at when `draft` was made from it, if it was
+/// The commit the directory was at when `workspace` was made from it, if it was
 /// a repository with a commit.
-pub fn head(draft: &Draft) -> Option<String> {
-    let head = fs::read_to_string(draft.dir.join("head")).ok()?;
+pub fn head(workspace: &Workspace) -> Option<String> {
+    let head = fs::read_to_string(workspace.dir.join("head")).ok()?;
     Some(head.trim().to_string())
 }
 
-/// What changed in a draft: what the directory was when the draft was made
-/// and what the draft's tree is now, recorded as trees in a repository.
+/// What changed in a workspace: what the directory was when the workspace was
+/// made and what the workspace's tree is now, recorded as trees in a
+/// repository.
 pub struct Changes {
     /// The repository the trees are in.
     pub repo: Repo,
-    /// The ID of the tree the draft was made from.
+    /// The ID of the tree the workspace was made from.
     pub before: String,
-    /// The ID of the draft's tree.
+    /// The ID of the workspace's tree.
     pub after: String,
 }
 
 impl Changes {
-    /// Records what changed in `draft`.
-    pub fn of(draft: &Draft) -> io::Result<Changes> {
-        let tree = draft.tree()?;
-        let after = draft.dir.join("tree.index");
-        if let Ok(fork) = fs::read_to_string(draft.dir.join("fork")) {
-            let origin = draft.origin()?;
+    /// Records what changed in `workspace`.
+    pub fn of(workspace: &Workspace) -> io::Result<Changes> {
+        let tree = workspace.tree()?;
+        let after = workspace.dir.join("tree.index");
+        if let Ok(fork) = fs::read_to_string(workspace.dir.join("fork")) {
+            let origin = workspace.origin()?;
             let (dir, objects) = toplevel(&origin).ok_or_else(|| {
                 io::Error::other(format!(
                     "{} is no longer a git repository",
@@ -190,7 +191,7 @@ impl Changes {
             })?;
             let repo = Repo {
                 dir,
-                objects: Some((draft.dir.join("objects"), objects)),
+                objects: Some((workspace.dir.join("objects"), objects)),
             };
             let after = repo.snapshot(&tree, &after)?;
             let before = fork.trim().to_string();
@@ -200,14 +201,14 @@ impl Changes {
                 after,
             });
         }
-        let base = draft.base();
+        let base = workspace.base();
         if !base.is_dir() {
             return Err(io::Error::other(format!(
-                "draft {} has nothing to compare it with",
-                draft.label()
+                "workspace {} has nothing to compare it with",
+                workspace.label()
             )));
         }
-        let dir = draft.dir.join("git");
+        let dir = workspace.dir.join("git");
         if !dir.exists() {
             let made = git()
                 .args(["init", "--quiet", "--bare"])
@@ -218,7 +219,7 @@ impl Changes {
             }
         }
         let repo = Repo { dir, objects: None };
-        let before = repo.snapshot(&base, &draft.dir.join("base.index"))?;
+        let before = repo.snapshot(&base, &workspace.dir.join("base.index"))?;
         let after = repo.snapshot(&tree, &after)?;
         Ok(Changes {
             repo,
@@ -228,7 +229,7 @@ impl Changes {
     }
 
     /// The changes as a patch that `git apply` applies to the directory the
-    /// draft was made from, whatever the configuration says about how to
+    /// workspace was made from, whatever the configuration says about how to
     /// show a diff.
     pub fn patch(&self) -> io::Result<Vec<u8>> {
         let diff = self

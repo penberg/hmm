@@ -1,6 +1,6 @@
 .TH HMM 1 2026-09-23 "hmm 0.1.0" "User Commands"
 .SH NAME
-hmm \- run commands in drafts of the working directory
+hmm \- run commands in workspaces of the working directory
 .SH SYNOPSIS
 .B hmm
 .br
@@ -18,30 +18,30 @@ hmm \- run commands in drafts of the working directory
 .br
 .B hmm diff
 .RB [ \-\-stat ]
-.RI [ draft ]
+.RI [ workspace ]
 .br
 .B hmm apply
 .RB [ \-\-check ]
-.RI [ draft ]
+.RI [ workspace ]
 .br
 .B hmm merge
-.RI [ draft ]
+.RI [ workspace ]
 .br
 .B hmm rm
-.IR draft ...
+.IR workspace ...
 .SH DESCRIPTION
 .B hmm
-runs commands in drafts: copies of the working directory that a command
+runs commands in workspaces: copies of the working directory that a command
 may change as it likes, while the working directory and the rest of the
 system stay as they are.
 It is meant for running coding agents, and anything else you would rather
 not trust with your files.
 .PP
-A draft is a copy-on-write clone, so making one is quick and takes no
+A workspace is a copy-on-write clone, so making one is quick and takes no
 space until the command writes to it, and it includes everything in the
 directory: the repository, uncommitted changes, and build output, so builds
 start warm.
-The command runs in the draft, which has the same name as the working
+The command runs in the workspace, which has the same name as the working
 directory but lives under
 .BR hmm 's
 data directory (see
@@ -49,9 +49,9 @@ data directory (see
 and it is confined there: see
 .BR SANDBOX .
 .PP
-When it makes a draft,
+When it makes a workspace,
 .B hmm
-also records what the directory was, to compare the draft with later.
+also records what the directory was, to compare the workspace with later.
 If the directory is the top of a git repository, that is the commit it is
 at and the tree of its files, uncommitted changes included, which take
 little time and no space in the repository; otherwise, it is a second
@@ -59,13 +59,13 @@ clone.
 .PP
 With no command,
 .B hmm
-lists the drafts of the working directory, as
+lists the workspaces of the working directory, as
 .B hmm ls
 does.
 .SH COMMANDS
 .TP
 .B hmm run \fR[\fIoptions\fR] [\fIcommand \fR[\fIargument \fR...]]
-Make a new draft of the working directory and run
+Make a new workspace of the working directory and run
 .I command
 in it, or your shell
 .RB ( $SHELL ,
@@ -82,17 +82,17 @@ to
 .BR claude .
 When the command exits,
 .B hmm
-prints where the draft is, and exits with the command's exit status.
-The draft stays until it is removed.
+prints where the workspace is, and exits with the command's exit status.
+The workspace stays until it is removed.
 .RS
 .TP
 .B \-\-rm
-Remove the draft when the command exits, rather than keeping it, as
+Remove the workspace when the command exits, rather than keeping it, as
 .B hmm rm
 would.
 .TP
 .BI \-n " name" "\fR, \fP\-\-name " name
-Name the draft
+Name the workspace
 .IR name ,
 so that it can be referred to by the name rather than its ID.
 A name is letters, digits,
@@ -102,7 +102,7 @@ and
 .BR . ,
 not starting with
 .BR \- ,
-and is unique among the drafts of the working directory.
+and is unique among the workspaces of the working directory.
 .TP
 .BI \-w " path" "\fR, \fP\-\-write " path
 Let the command write to
@@ -115,62 +115,62 @@ lets Claude Code save its sessions and settings.
 .RE
 .TP
 .B hmm ls \fR[\fB\-a\fR]
-List the drafts of the working directory: their IDs, names, whether a
+List the workspaces of the working directory: their IDs, names, whether a
 command is still running in them, how long ago they were made, and the
-directory they are drafts of.
+directory they are workspaces of.
 With
 .BR \-a " (" \-\-all ),
-list the drafts of every directory.
+list the workspaces of every directory.
 .TP
-.B hmm diff \fR[\fB\-\-stat\fR] [\fIdraft\fR]
+.B hmm diff \fR[\fB\-\-stat\fR] [\fIworkspace\fR]
 Show what changed in
-.I draft
-since it was made, or in the working directory's latest draft if none is
+.I workspace
+since it was made, or in the working directory's latest workspace if none is
 given, as a patch; with
 .BR \-\-stat ,
 only which files changed, and how much.
 If the directory is a git repository, what it ignores, such as build
 output, is left out.
 .TP
-.B hmm apply \fR[\fB\-\-check\fR] [\fIdraft\fR]
+.B hmm apply \fR[\fB\-\-check\fR] [\fIworkspace\fR]
 Make the changes that
 .B hmm diff
-shows in the directory the draft was made from: all of them or, if any
+shows in the directory the workspace was made from: all of them or, if any
 does not apply, because the directory has changed in the same places since
-the draft was made, none.
+the workspace was made, none.
 Only files change: nothing is staged or committed.
-A draft that is already applied is left alone, and so is one in which a
+A workspace that is already applied is left alone, and so is one in which a
 command is running.
 With
 .BR \-\-check ,
 only say whether the changes apply.
-The draft stays until it is removed.
+The workspace stays until it is removed.
 .TP
-.B hmm merge \fR[\fIdraft\fR]
+.B hmm merge \fR[\fIworkspace\fR]
 Merge the commits made in
-.IR draft ,
-or in the working directory's latest draft if none is given, into the
+.IR workspace ,
+or in the working directory's latest workspace if none is given, into the
 branch the directory it was made from is on, as
 .BR "git merge" (1)
-does: a fast-forward if the branch has not moved since the draft was made,
-a merge commit if it has, and, if the two changed the same lines, conflicts
-to resolve and commit as for any merge.
+does: a fast-forward if the branch has not moved since the workspace was
+made, a merge commit if it has, and, if the two changed the same lines,
+conflicts to resolve and commit as for any merge.
 Only commits are merged: changes the command did not commit are left in the
-draft, and
+workspace, and
 .B hmm merge
 says so.
-The draft must have been made from the top of a git repository, and no
+The workspace must have been made from the top of a git repository, and no
 command may be running in it.
 The commits stay in the repository as
 .BI refs/hmm/ id
-until the draft is removed.
+until the workspace is removed.
 .TP
-.B hmm rm \fIdraft \fR...
-Remove the drafts given, and everything in them, and the references to
+.B hmm rm \fIworkspace \fR...
+Remove the workspaces given, and everything in them, and the references to
 their commits that
 .B hmm merge
 made.
-A draft in which a command is running is not removed.
+A workspace in which a command is running is not removed.
 .PP
 .B hmm \-\-help
 prints a summary of the commands, and
@@ -178,19 +178,19 @@ prints a summary of the commands, and
 .I command
 .B \-\-help
 of a command's options.
-.SH DRAFTS
-Every draft has an ID of six letters and digits, chosen at random when it is
-made, such as
+.SH WORKSPACES
+Every workspace has an ID of six letters and digits, chosen at random when
+it is made, such as
 .BR k3xq9a ,
 and a name if it was given one with
 .BR \-n .
-Wherever a draft is expected, it can be given by its name, if it is a draft
-of the working directory, or by its ID, or by the start of its ID if no
-other draft's ID starts the same way:
+Wherever a workspace is expected, it can be given by its name, if it is a
+workspace of the working directory, or by its ID, or by the start of its ID
+if no other workspace's ID starts the same way:
 .B hmm rm k3
 removes
 .B k3xq9a
-if it is the only draft whose ID starts with
+if it is the only workspace whose ID starts with
 .BR k3 .
 Being random, IDs are not handed out again once removed, in practice.
 .SH SANDBOX
@@ -199,7 +199,7 @@ The command runs under the macOS sandbox
 with a profile that allows everything but:
 .TP
 Writing
-Only the draft, the temporary directories
+Only the workspace, the temporary directories
 .RB ( /tmp
 and
 .BR $TMPDIR ),
@@ -221,13 +221,13 @@ The contents of
 .B ~/.gnupg
 and
 .B ~/.config/gh
-cannot be read, and neither can other drafts.
+cannot be read, and neither can other workspaces.
 .PP
 Everything else, including the network and the GPU, is allowed.
 .SH FILES
 .TP
 .I ~/Library/Application Support/hmm/
-The drafts, one directory each, named by ID.
+The workspaces, one directory each, named by ID.
 In each:
 .RS
 .TP
@@ -237,42 +237,42 @@ made from.
 .TP
 .IR head ", " fork
 If the directory is the top of a git repository: the commit it was at when
-the draft was made, and the tree of its files then.
+the workspace was made, and the tree of its files then.
 .TP
 .I base/
-Otherwise: a clone of the directory as it was when the draft was made.
+Otherwise: a clone of the directory as it was when the workspace was made.
 .TP
 .IR objects/ ", " fork.index ", " base.index ", " tree.index ", " git/
 What
 .B hmm
-keeps to compare the draft with git: the objects it makes, kept out of the
-directory's repository; its indexes of the directory and the draft; and, if
-the directory is not a git repository, a repository of its own.
+keeps to compare the workspace with git: the objects it makes, kept out of
+the directory's repository; its indexes of the directory and the workspace;
+and, if the directory is not a git repository, a repository of its own.
 .TP
 .I origin
 The path of the directory it was made from.
-While a command runs in the draft,
+While a command runs in the workspace,
 .B hmm
 holds a lock on this file.
 .TP
 .I name
-The draft's name, if it was given one.
+The workspace's name, if it was given one.
 .RE
 .SH EXIT STATUS
 .B hmm run
 exits with the command's exit status, or 128 plus the number of the signal
 that ended it.
-The other commands exit with 0 if every draft given was found and dealt
+The other commands exit with 0 if every workspace given was found and dealt
 with, and 1 otherwise.
 .SH EXAMPLES
-Run Claude Code in a draft named
+Run Claude Code in a workspace named
 .BR parser :
 .PP
 .RS
 .B hmm run \-n parser \-w ~/.claude claude
 .RE
 .PP
-See the drafts of the working directory, what one changed, merge the
+See the workspaces of the working directory, what one changed, merge the
 commits made in it, and remove it:
 .PP
 .RS
@@ -291,14 +291,15 @@ p7mw2d  \-       running   5m  ~/src/penberg/dwim
 runs only on macOS for now, and needs the working directory to be on an
 APFS volume, the same one as the home directory.
 .PP
-The command runs in the draft's path rather than the working directory's,
-so tools that remember absolute paths, such as build caches, may rebuild.
+The command runs in the workspace's path rather than the working
+directory's, so tools that remember absolute paths, such as build caches,
+may rebuild.
 .PP
 The network is not confined: a command can send anything it can read to
 anywhere, and can push to remotes whose credentials it can reach, such as
 through the macOS keychain.
 .PP
-Commits made in a draft are not signed if signing needs
+Commits made in a workspace are not signed if signing needs
 .B ~/.gnupg
 or
 .BR ~/.ssh ,
@@ -306,7 +307,7 @@ which the command cannot read; the merge commit
 .B hmm merge
 makes is.
 .PP
-A draft of a linked worktree
+A workspace of a linked worktree
 .RB ( git\-worktree (1))
 shares its repository with the worktree, which the command cannot write
 to, so commits cannot be made in it.

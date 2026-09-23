@@ -1,13 +1,13 @@
-//! Coding agents: commands `hmm` knows, and prepares to run in a draft.
+//! Coding agents: commands `hmm` knows, and prepares to run in a workspace.
 
 mod claude;
 
 use std::{path::Path, process::Command};
 
 /// A coding agent, which may need more than the sandbox to run well in a
-/// draft.
+/// workspace.
 pub trait Agent {
-    /// Prepares `command`, which runs the agent in a draft.
+    /// Prepares `command`, which runs the agent in a workspace.
     fn configure(&self, command: &mut Command);
 }
 
