@@ -6,6 +6,8 @@ directory and the rest of the system stay as they are. It is meant for
 running coding agents, and anything else you would rather not trust with
 your files.
 
+![Claude Code commits in a draft, and hmm merges the commit](.github/assets/demo.gif)
+
 Making a draft is quick and takes no space until the command writes to it.
 The draft includes everything in the directory (the repository, uncommitted
 changes, and build output), so builds start warm.
