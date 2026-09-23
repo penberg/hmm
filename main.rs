@@ -2,6 +2,7 @@
 //! directory, where the command may write to the clone and to caches, but
 //! nowhere else, and may not read secrets such as SSH keys.
 
+mod agent;
 #[cfg(target_os = "macos")]
 mod darwin;
 mod git;

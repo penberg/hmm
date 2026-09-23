@@ -10,7 +10,7 @@ use std::{
 
 use argh::FromArgs;
 
-use crate::{Draft, cmd::rm, darwin, git, root};
+use crate::{Draft, agent, cmd::rm, darwin, git, root};
 
 /// Directories under the home directory that commands may write to, so that
 /// builds and package managers keep working.
@@ -79,7 +79,11 @@ impl Run {
         } else {
             self.command.clone()
         };
-        let mut child = confine(root, &tree, &self.write, &command)?.spawn()?;
+        let mut confined = confine(root, &tree, &self.write, &command)?;
+        if let Some(agent) = agent::detect_agent(&command) {
+            agent.configure(&mut confined);
+        }
+        let mut child = confined.spawn()?;
         // The terminal's signals reach the command too: `hmm` outlives it, as
         // a shell does, to say where the draft is or remove it.
         for signal in [libc::SIGINT, libc::SIGQUIT, libc::SIGHUP] {
