@@ -1,0 +1,212 @@
+.TH HMM 1 2026-09-23 "hmm 0.1.0" "User Commands"
+.SH NAME
+hmm \- run commands in drafts of the working directory
+.SH SYNOPSIS
+.B hmm
+.br
+.B hmm run
+.RB [ \-n
+.IR name ]
+.RB [ \-w
+.IR path ]...
+.RI [ command
+.RI [ argument ...]]
+.br
+.B hmm ls
+.RB [ \-a ]
+.br
+.B hmm rm
+.IR draft ...
+.SH DESCRIPTION
+.B hmm
+runs commands in drafts: copies of the working directory that a command
+may change as it likes, while the working directory and the rest of the
+system stay as they are.
+It is meant for running coding agents, and anything else you would rather
+not trust with your files.
+.PP
+A draft is a copy-on-write clone, so making one is quick and takes no
+space until the command writes to it, and it includes everything in the
+directory: the repository, uncommitted changes, and build output, so builds
+start warm.
+The command runs in the draft, which has the same name as the working
+directory but lives under
+.BR hmm 's
+data directory (see
+.BR FILES ),
+and it is confined there: see
+.BR SANDBOX .
+.PP
+With no command,
+.B hmm
+lists the drafts of the working directory, as
+.B hmm ls
+does.
+.SH COMMANDS
+.TP
+.B hmm run \fR[\fIoptions\fR] [\fIcommand \fR[\fIargument \fR...]]
+Make a new draft of the working directory and run
+.I command
+in it, or your shell
+.RB ( $SHELL ,
+or
+.B /bin/sh
+if it is not set) if no command is given.
+Everything from
+.I command
+on belongs to the command, its own options included, so
+.B hmm run claude \-\-resume
+passes
+.B \-\-resume
+to
+.BR claude .
+When the command exits,
+.B hmm
+prints where the draft is, and exits with the command's exit status.
+The draft stays until it is removed.
+.RS
+.TP
+.BI \-n " name" "\fR, \fP\-\-name " name
+Name the draft
+.IR name ,
+so that it can be referred to by the name rather than its ID.
+A name is letters, digits,
+.BR \- ,
+.B _
+and
+.BR . ,
+not starting with
+.BR \- ,
+and is unique among the drafts of the working directory.
+.TP
+.BI \-w " path" "\fR, \fP\-\-write " path
+Let the command write to
+.I path
+too, and to everything under it.
+Can be repeated.
+Commands that keep state in the home directory need it: for example,
+.B hmm run \-w ~/.claude claude
+lets Claude Code save its sessions and settings.
+.RE
+.TP
+.B hmm ls \fR[\fB\-a\fR]
+List the drafts of the working directory: their IDs, names, whether a
+command is still running in them, how long ago they were made, and the
+directory they are drafts of.
+With
+.BR \-a " (" \-\-all ),
+list the drafts of every directory.
+.TP
+.B hmm rm \fIdraft \fR...
+Remove the drafts given, and everything in them.
+A draft in which a command is running is not removed.
+.PP
+.B hmm \-\-help
+prints a summary of the commands, and
+.B hmm
+.I command
+.B \-\-help
+of a command's options.
+.SH DRAFTS
+Every draft has an ID of six letters and digits, chosen at random when it is
+made, such as
+.BR k3xq9a ,
+and a name if it was given one with
+.BR \-n .
+Wherever a draft is expected, it can be given by its name, if it is a draft
+of the working directory, or by its ID, or by the start of its ID if no
+other draft's ID starts the same way:
+.B hmm rm k3
+removes
+.B k3xq9a
+if it is the only draft whose ID starts with
+.BR k3 .
+Being random, IDs are not handed out again once removed, in practice.
+.SH SANDBOX
+The command runs under the macOS sandbox
+.RB ( sandbox\-exec (1)),
+with a profile that allows everything but:
+.TP
+Writing
+Only the draft, the temporary directories
+.RB ( /tmp
+and
+.BR $TMPDIR ),
+devices, the caches that builds and package managers write to
+.RB ( ~/.cargo ,
+.BR ~/.rustup ,
+.BR ~/.cache ,
+.B ~/.npm
+and
+.BR ~/Library/Caches ),
+and the paths given with
+.B \-w
+may be written to.
+.TP
+Reading
+The contents of
+.BR ~/.ssh ,
+.BR ~/.aws ,
+.B ~/.gnupg
+and
+.B ~/.config/gh
+cannot be read, and neither can other drafts.
+.PP
+Everything else, including the network and the GPU, is allowed.
+.SH FILES
+.TP
+.I ~/Library/Application Support/hmm/
+The drafts, one directory each, named by ID.
+In each:
+.RS
+.TP
+.I <name>/
+The clone, named as the directory it was made from.
+.TP
+.I origin
+The path of the directory it was made from.
+While a command runs in the draft,
+.B hmm
+holds a lock on this file.
+.TP
+.I name
+The draft's name, if it was given one.
+.RE
+.SH EXIT STATUS
+.B hmm run
+exits with the command's exit status, or 128 plus the number of the signal
+that ended it.
+The other commands exit with 0 if every draft given was found and dealt
+with, and 1 otherwise.
+.SH EXAMPLES
+Run Claude Code in a draft named
+.BR parser :
+.PP
+.RS
+.B hmm run \-n parser \-w ~/.claude claude
+.RE
+.PP
+See the drafts of the working directory, and remove one:
+.PP
+.RS
+.nf
+.B $ hmm
+ID      NAME    STATE    AGE  ORIGIN
+k3xq9a  parser  done      2h  ~/src/penberg/dwim
+p7mw2d  \-       running   5m  ~/src/penberg/dwim
+.B $ hmm rm parser
+.fi
+.RE
+.SH CAVEATS
+.B hmm
+runs only on macOS for now, and needs the working directory to be on an
+APFS volume, the same one as the home directory.
+.PP
+The command runs in the draft's path rather than the working directory's,
+so tools that remember absolute paths, such as build caches, may rebuild.
+.PP
+The network is not confined: a command can send anything it can read to
+anywhere.
+.SH SEE ALSO
+.BR sandbox\-exec (1),
+.BR clonefile (2)

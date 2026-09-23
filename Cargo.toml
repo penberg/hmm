@@ -1,0 +1,15 @@
+[package]
+name = "hmm"
+version = "0.1.0"
+edition = "2024"
+description = "Run a command in a draft: a copy of the working directory it may write to"
+license = "MIT"
+
+[[bin]]
+name = "hmm"
+path = "main.rs"
+
+[dependencies]
+argh = "0.1.19"
+libc = "0.2.189"
+dirs = "7.0.0"
