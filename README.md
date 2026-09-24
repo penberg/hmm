@@ -8,9 +8,10 @@ your files.
 
 ![Claude Code commits in a workspace, and hmm merges the commit](.github/assets/demo.gif)
 
-Making a workspace is quick and takes no space until the command writes to
-it. The workspace includes everything in the directory (the repository,
-uncommitted changes, and build output), so builds start warm.
+Making a new workspace is fast and takes no space until written to with a
+filesystem that supports copy-on-write. The workspace includes everything
+in the directory (the repository, uncommitted changes, and build output),
+so builds start warm.
 
 ## Install
 
@@ -18,8 +19,19 @@ uncommitted changes, and build output), so builds start warm.
 cargo install --path .
 ```
 
-`hmm` runs only on macOS for now, and needs the working directory to be on
-an APFS volume, the same one as the home directory.
+`hmm` runs on Linux and macOS.
+
+## Requirements
+
+### Linux
+
+- Linux 5.19 or later, with Landlock enabled
+- A filesystem such as XFS that supports copy-on-write is recommended;
+  otherwise workspaces are full copies.
+
+### macOS
+
+- APFS, on the same volume as your home directory
 
 ## Usage
 
@@ -82,15 +94,55 @@ compare the workspace with, and `hmm diff` and `hmm apply` work the same.
 
 ## Sandbox
 
-The command runs under the macOS sandbox. It may write only to the
-workspace, temporary directories, build and package manager caches
-(`~/.cargo`, `~/.rustup`, `~/.cache`, `~/.npm`, `~/Library/Caches`), and
-paths given with `-w`. It cannot read `~/.ssh`, `~/.aws`, `~/.gnupg`,
-`~/.config/gh`, or other workspaces.
+The command may write only to the workspace, temporary directories, devices,
+build and package manager caches (`~/.cargo`, `~/.rustup`, `~/.cache`,
+`~/.npm`, `~/Library/Caches`), and paths given with `-w`. It cannot read
+`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, or other workspaces.
+Everything else is allowed. How this is enforced depends on the platform.
+
+### macOS
+
+The command runs under Seatbelt, the macOS sandbox, through `sandbox-exec`.
+`hmm` writes a profile that allows everything, then denies writing
+everywhere but the writable paths, and denies listing, reading, and writing
+the hidden paths. Since later rules win, the workspace, which lies among the
+hidden workspaces, is allowed last. The profile gives the paths as
+parameters rather than in the text, and Seatbelt matches them after
+resolving symbolic links, so they cannot be escaped by quoting or linking.
+
+`sandbox-exec` cannot run inside another sandbox, so a command in a
+workspace cannot confine another, as `hmm`'s tests do.
+
+### Linux
+
+The command runs under Landlock, which a process uses to confine itself and
+the processes it starts, without privileges. `hmm` makes a ruleset in which
+reading and running files, and changing anything, are denied unless
+granted, and applies it just before starting the command. Landlock needs
+Linux 5.19 or later; without it, `hmm run` fails rather than run the command
+unconfined.
+
+Landlock can only grant rights, to a file and everything under it, and
+cannot take them away from something inside. So rather than denying the
+hidden paths, `hmm` grants the rights to what is around them: it lists each
+directory above a hidden path, and grants reading to every entry in it but
+that path, and so on down. Writing is granted the same way, to the writable
+paths, and then reading and writing to the workspace itself. Because of
+this, on Linux:
+
+- The command can list the files in a hidden directory, such as the names
+  of the keys in `~/.ssh`, but cannot read them.
+- Files made in a directory above a hidden path after the command starts,
+  such as a new file in the home directory, cannot be read.
+- The command cannot run set-user-ID programs such as `sudo`, as Landlock
+  confines a process without privileges only if it can gain none.
+
+Unlike `sandbox-exec`, Landlock works inside another Landlock sandbox, so a
+command in a workspace can confine another, as `hmm`'s tests do.
 
 The network is not confined: a command can send anything it can read to
 anywhere, and can push to remotes whose credentials it can reach, such as
-through the macOS keychain.
+through the macOS keychain or an SSH agent.
 
 Commits made in a workspace are not signed if signing needs `~/.gnupg` or
 `~/.ssh`, which the command cannot read; the merge commit `hmm merge` makes

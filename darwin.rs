@@ -36,7 +36,7 @@ pub fn confine(
     clone: &Path,
     writable: &[PathBuf],
     hidden: &[PathBuf],
-) -> Command {
+) -> io::Result<Command> {
     let mut profile = String::from("(version 1)\n(allow default)\n(deny file-write*)\n");
     let mut params = Vec::new();
     profile.push_str("(allow file-write* (subpath \"/dev\")");
@@ -73,5 +73,5 @@ pub fn confine(
         sandbox.arg("-D").arg(param);
     }
     sandbox.arg("--").args(command);
-    sandbox
+    Ok(sandbox)
 }

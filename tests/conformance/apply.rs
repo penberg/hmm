@@ -89,7 +89,7 @@ fn applies_over_changes_elsewhere_in_the_directory() {
     let dir = world.repo("project");
     write(&dir, "a", "1\n2\n3\n4\n5\n6\n7\n8\n");
     world.git(&dir, &["commit", "--quiet", "-am", "lines"]);
-    world.sh(&dir, "sed -i '' 's/^8$/eight/' a");
+    world.sh(&dir, "sed 's/^8$/eight/' a > a.new && mv a.new a");
     write(&dir, "a", "one\n2\n3\n4\n5\n6\n7\n8\n");
     write(&dir, "other", "other\n");
     let out = world.hmm(&dir, &["apply"]);
