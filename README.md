@@ -69,6 +69,8 @@ p7mw2d  -       running   5m  ~/src/penberg/dwim
 A workspace can be referred to by its name, its ID, or a unique prefix of
 its ID; with none, commands use the working directory's latest workspace.
 
+See [MANUAL.md](MANUAL.md) for every command and option.
+
 ## Git
 
 `hmm` knows about git, but works without it. When the working directory is
@@ -152,26 +154,3 @@ repository lies outside the workspace.
 ## License
 
 MIT
-
-## Command Line Reference
-
-| Command | Description |
-| --- | --- |
-| `hmm` | List the workspaces of the working directory, as `hmm ls` does |
-| `hmm run [--rm] [-n name] [-w path]... [command...]` | Run a command (or your shell) in a new workspace, removing it afterwards with `--rm` |
-| `hmm ls [-a]` | List workspaces of the working directory, or of every directory with `-a` |
-| `hmm diff [--stat] [workspace]` | Show what changed in a workspace |
-| `hmm merge [workspace]` | Merge the commits made in a workspace into the working directory's branch |
-| `hmm apply [--check] [workspace]` | Make a workspace's changes in the working directory, or with `--check` only say whether they apply |
-| `hmm rm workspace...` | Remove workspaces, and the references to their commits that `hmm merge` made |
-
-| Option | Description |
-| --- | --- |
-| `--rm` | Remove the workspace when the command exits |
-| `-n`, `--name name` | Name the workspace, so it can be referred to by name |
-| `-w`, `--write path` | Let the command write to `path` too; can be repeated |
-| `-a`, `--all` | List the workspaces of every directory |
-| `--stat` | Show only which files changed, and how much |
-| `--check` | Only say whether the changes apply |
-
-See [`man/hmm.1`](man/hmm.1) (`man ./man/hmm.1`) for the details.
