@@ -6,6 +6,13 @@ mod agent;
 #[cfg(target_os = "macos")]
 mod darwin;
 mod git;
+#[cfg(target_os = "linux")]
+mod linux;
+
+#[cfg(target_os = "macos")]
+use darwin as os;
+#[cfg(target_os = "linux")]
+use linux as os;
 
 mod cmd {
     pub mod apply;
@@ -16,8 +23,8 @@ mod cmd {
     pub mod run;
 }
 
-#[cfg(not(target_os = "macos"))]
-compile_error!("hmm runs only on macOS for now");
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+compile_error!("hmm runs only on macOS and Linux for now");
 
 use std::{
     ffi::OsString,
@@ -72,7 +79,8 @@ fn main() -> ExitCode {
 }
 
 /// The directory workspaces are kept in: `hmm` under the platform's local data
-/// directory (`~/Library/Application Support/hmm` on macOS).
+/// directory (`~/Library/Application Support/hmm` on macOS,
+/// `~/.local/share/hmm` on Linux).
 pub fn root() -> io::Result<PathBuf> {
     let root = dirs::data_local_dir()
         .ok_or_else(|| io::Error::other("no local data directory"))?

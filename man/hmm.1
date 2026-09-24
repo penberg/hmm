@@ -195,8 +195,8 @@ if it is the only workspace whose ID starts with
 Being random, IDs are not handed out again once removed, in practice.
 .SH SANDBOX
 The command runs under the macOS sandbox
-.RB ( sandbox\-exec (1)),
-with a profile that allows everything but:
+.RB ( sandbox\-exec (1))
+on macOS, and under Landlock on Linux, which allow everything but:
 .TP
 Writing
 Only the workspace, the temporary directories
@@ -222,11 +222,15 @@ The contents of
 and
 .B ~/.config/gh
 cannot be read, and neither can other workspaces.
+On Linux, their files can still be listed, and files made in the
+directories above them after the command starts cannot be read.
 .PP
 Everything else, including the network and the GPU, is allowed.
 .SH FILES
 .TP
 .I ~/Library/Application Support/hmm/
+.TQ
+.I ~/.local/share/hmm/
 The workspaces, one directory each, named by ID.
 In each:
 .RS
@@ -288,8 +292,16 @@ p7mw2d  \-       running   5m  ~/src/penberg/dwim
 .RE
 .SH CAVEATS
 .B hmm
-runs only on macOS for now, and needs the working directory to be on an
-APFS volume, the same one as the home directory.
+runs on macOS and Linux.
+On macOS, it needs the working directory to be on an APFS volume, the same
+one as the home directory.
+On Linux, it needs Landlock (Linux 5.19 or later), and making a workspace
+takes no space only on a file system that can share blocks between files,
+such as Btrfs or XFS, the same one as the home directory; elsewhere, it
+copies the directory.
+The command cannot run set-user-ID programs such as
+.BR sudo (8)
+on Linux.
 .PP
 The command runs in the workspace's path rather than the working
 directory's, so tools that remember absolute paths, such as build caches,
@@ -297,7 +309,7 @@ may rebuild.
 .PP
 The network is not confined: a command can send anything it can read to
 anywhere, and can push to remotes whose credentials it can reach, such as
-through the macOS keychain.
+through the macOS keychain, or an SSH agent.
 .PP
 Commits made in a workspace are not signed if signing needs
 .B ~/.gnupg
@@ -314,4 +326,5 @@ to, so commits cannot be made in it.
 .SH SEE ALSO
 .BR git\-merge (1),
 .BR sandbox\-exec (1),
-.BR clonefile (2)
+.BR clonefile (2),
+.BR landlock (7)

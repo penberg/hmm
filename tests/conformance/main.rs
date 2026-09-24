@@ -7,9 +7,10 @@
 //! rather than the system's, as the command in a workspace may write to the
 //! latter.
 //!
-//! `hmm run` needs `sandbox-exec`, which cannot run inside another sandbox,
-//! such as that of a command already running in a workspace: tests that make
-//! workspaces are skipped there, and say so.
+//! `hmm run` needs a sandbox: on macOS `sandbox-exec`, which cannot run
+//! inside another sandbox, such as that of a command already running in a
+//! workspace, and on Linux Landlock, which may not be enabled. Tests that make
+//! workspaces are skipped where there is none, and say so.
 
 mod apply;
 mod diff;
@@ -26,11 +27,11 @@ use std::{
     thread,
 };
 
-/// Returns from the test, saying so, if `sandbox-exec` cannot run here.
+/// Returns from the test, saying so, if the sandbox cannot run here.
 macro_rules! need_sandbox {
     () => {
         if !$crate::sandbox() {
-            eprintln!("skipped: sandbox-exec cannot run here");
+            eprintln!("skipped: the sandbox cannot run here");
             return;
         }
     };
@@ -38,6 +39,7 @@ macro_rules! need_sandbox {
 pub(crate) use need_sandbox;
 
 /// Whether `sandbox-exec` can run here.
+#[cfg(target_os = "macos")]
 pub fn sandbox() -> bool {
     static SANDBOX: OnceLock<bool> = OnceLock::new();
     *SANDBOX.get_or_init(|| {
@@ -46,6 +48,25 @@ pub fn sandbox() -> bool {
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|status| status.success())
+    })
+}
+
+/// Whether Landlock is enabled here, in a version `hmm` can use.
+#[cfg(target_os = "linux")]
+pub fn sandbox() -> bool {
+    static SANDBOX: OnceLock<bool> = OnceLock::new();
+    *SANDBOX.get_or_init(|| {
+        // `landlock_create_ruleset` with `LANDLOCK_CREATE_RULESET_VERSION`
+        // returns the version of Landlock's ABI.
+        let abi = unsafe {
+            libc::syscall(
+                libc::SYS_landlock_create_ruleset,
+                std::ptr::null::<u64>(),
+                0,
+                1,
+            )
+        };
+        abi >= 2
     })
 }
 
@@ -79,10 +100,14 @@ impl World {
 
     /// The directory workspaces are kept in.
     pub fn root(&self) -> PathBuf {
-        self.home()
-            .join("Library")
-            .join("Application Support")
-            .join("hmm")
+        if cfg!(target_os = "macos") {
+            self.home()
+                .join("Library")
+                .join("Application Support")
+                .join("hmm")
+        } else {
+            self.home().join(".local").join("share").join("hmm")
+        }
     }
 
     /// The IDs of every workspace.
@@ -127,6 +152,7 @@ impl World {
         }
         command
             .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_DATA_HOME")
             .env("HOME", self.home())
             .env("SHELL", "/bin/sh")
             .env("GIT_CONFIG_NOSYSTEM", "1")

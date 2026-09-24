@@ -10,7 +10,7 @@ use std::{
 
 use argh::FromArgs;
 
-use crate::{Workspace, agent, cmd::rm, darwin, git, root};
+use crate::{Workspace, agent, cmd::rm, git, os, root};
 
 /// Directories under the home directory that commands may write to, so that
 /// builds and package managers keep working.
@@ -127,7 +127,7 @@ pub fn confine(
         .filter_map(|path| path.canonicalize().ok())
         .chain([root.to_path_buf()])
         .collect();
-    let mut command = darwin::confine(command, tree, &writable, &hidden);
+    let mut command = os::confine(command, tree, &writable, &hidden)?;
     command.current_dir(tree);
     Ok(command)
 }

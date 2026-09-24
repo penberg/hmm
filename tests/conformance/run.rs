@@ -316,7 +316,7 @@ fn the_command_writes_to_temporary_directories_and_caches() {
     }
     world.sh(
         &dir,
-        "for d in /tmp \"$TMPDIR\" ~/.cargo ~/.rustup ~/.cache ~/.npm ~/Library/Caches; do \
+        "for d in /tmp \"${TMPDIR:-/tmp}\" ~/.cargo ~/.rustup ~/.cache ~/.npm ~/Library/Caches; do \
            echo x > \"$d/hmm-test-$$\" && rm \"$d/hmm-test-$$\" || exit 1; \
          done",
     );

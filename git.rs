@@ -13,7 +13,7 @@ use std::{
     process::Command,
 };
 
-use crate::{Workspace, darwin};
+use crate::{Workspace, os};
 
 /// The variables that would point git at another repository than the one it
 /// is given.
@@ -129,8 +129,8 @@ pub fn make(workspace: &Workspace, origin: &Path) -> io::Result<()> {
     fs::create_dir(workspace.dir.join("tree"))?;
     let Some((dir, objects)) = toplevel(origin) else {
         let base = workspace.base();
-        darwin::clone(origin, &base)?;
-        return darwin::clone(&base, &tree);
+        os::clone(origin, &base)?;
+        return os::clone(&base, &tree);
     };
     let head = git()
         .arg("-C")
@@ -154,7 +154,7 @@ pub fn make(workspace: &Workspace, origin: &Path) -> io::Result<()> {
     };
     let fork = repo.snapshot(origin, &index)?;
     fs::write(workspace.dir.join("fork"), fork)?;
-    darwin::clone(origin, &tree)
+    os::clone(origin, &tree)
 }
 
 /// The commit the directory was at when `workspace` was made from it, if it was
