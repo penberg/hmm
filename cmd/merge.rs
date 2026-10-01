@@ -38,65 +38,14 @@ impl Merge {
                 workspace.label()
             )));
         }
-        let tree = workspace.tree()?;
-        let head = git::head(&workspace);
-
-        // The workspace's repository is read by git in the sandbox, as the
-        // command in the workspace may have changed its configuration: git
-        // there packs the commits made since the workspace was made into a
-        // bundle, which is only data, and git here fetches them from it.
-        let tip = confine(
-            &root,
-            &tree,
-            &[],
-            &sh(&["git", "rev-parse", "--verify", "HEAD"]),
-        )?
-        .output()?;
-        let tip = String::from_utf8_lossy(&tip.stdout).trim().to_string();
-        if !is_commit(&tip) || head.as_deref() == Some(tip.as_str()) {
+        let Some(reference) = take(&root, &workspace, &origin)? else {
             eprintln!(
                 "hmm: workspace {} has no commits to merge: hmm apply applies its changes",
                 workspace.label()
             );
             return Ok(ExitCode::FAILURE);
-        }
-        let bundle = tree.join(".git").join("hmm.bundle");
-        let mut create = sh(&[
-            "git",
-            "bundle",
-            "create",
-            "--quiet",
-            ".git/hmm.bundle",
-            "HEAD",
-        ]);
-        if let Some(head) = &head {
-            create.push(format!("^{head}"));
-        }
-        let created = confine(&root, &tree, &[], &create)?.status()?;
-        let fetched = created.success() && fetch(&origin, &bundle, &workspace.id)?;
-        let _ = fs::remove_file(&bundle);
-        if !fetched {
-            return Err(io::Error::other(format!(
-                "could not take the commits from workspace {}",
-                workspace.label()
-            )));
-        }
-
-        let reference = format!("refs/hmm/{}", workspace.id);
-        let committed = git::git()
-            .arg("-C")
-            .arg(&origin)
-            .args(["rev-parse", &format!("{reference}^{{tree}}")])
-            .output()?;
-        let committed = String::from_utf8_lossy(&committed.stdout)
-            .trim()
-            .to_string();
-        if Changes::of(&workspace)?.after != committed {
-            eprintln!(
-                "hmm: workspace {} has changes it did not commit, which are not merged",
-                workspace.label()
-            );
-        }
+        };
+        warn_uncommitted(&workspace, &origin, &reference)?;
         let merged = git::git()
             .arg("-C")
             .arg(&origin)
@@ -110,6 +59,78 @@ impl Merge {
             ExitCode::FAILURE
         })
     }
+}
+
+/// Takes the commits made in `workspace` since it was made into the repository
+/// of `origin`, the directory it was made from, as `refs/hmm/<id>`, and
+/// returns the reference, or `None` if there are no commits to take.
+///
+/// The workspace's repository is read by git in the sandbox, as the command in
+/// the workspace may have changed its configuration: git there packs the
+/// commits made since the workspace was made into a bundle, which is only
+/// data, and git here fetches them from it.
+pub fn take(root: &Path, workspace: &Workspace, origin: &Path) -> io::Result<Option<String>> {
+    if git::toplevel(origin).is_none() || !workspace.dir.join("fork").exists() {
+        return Err(io::Error::other(format!(
+            "workspace {} was not made from the top of a git repository",
+            workspace.label()
+        )));
+    }
+    let tree = workspace.tree()?;
+    let head = git::head(workspace);
+    let tip = confine(
+        root,
+        &tree,
+        &[],
+        &sh(&["git", "rev-parse", "--verify", "HEAD"]),
+    )?
+    .output()?;
+    let tip = String::from_utf8_lossy(&tip.stdout).trim().to_string();
+    if !is_commit(&tip) || head.as_deref() == Some(tip.as_str()) {
+        return Ok(None);
+    }
+    let bundle = tree.join(".git").join("hmm.bundle");
+    let mut create = sh(&[
+        "git",
+        "bundle",
+        "create",
+        "--quiet",
+        ".git/hmm.bundle",
+        "HEAD",
+    ]);
+    if let Some(head) = &head {
+        create.push(format!("^{head}"));
+    }
+    let created = confine(root, &tree, &[], &create)?.status()?;
+    let fetched = created.success() && fetch(origin, &bundle, &workspace.id)?;
+    let _ = fs::remove_file(&bundle);
+    if !fetched {
+        return Err(io::Error::other(format!(
+            "could not take the commits from workspace {}",
+            workspace.label()
+        )));
+    }
+    Ok(Some(format!("refs/hmm/{}", workspace.id)))
+}
+
+/// Says so if `workspace` has changes that were not committed, and so are not
+/// in `reference`, the commits taken from it.
+pub fn warn_uncommitted(workspace: &Workspace, origin: &Path, reference: &str) -> io::Result<()> {
+    let committed = git::git()
+        .arg("-C")
+        .arg(origin)
+        .args(["rev-parse", &format!("{reference}^{{tree}}")])
+        .output()?;
+    let committed = String::from_utf8_lossy(&committed.stdout)
+        .trim()
+        .to_string();
+    if Changes::of(workspace)?.after != committed {
+        eprintln!(
+            "hmm: workspace {} has changes it did not commit, which are left out",
+            workspace.label()
+        );
+    }
+    Ok(())
 }
 
 /// Fetches the commits in `bundle` into `origin`'s repository as

@@ -165,11 +165,47 @@ The commits stay in the repository as
 .BI refs/hmm/ id
 until the workspace is removed.
 .TP
+.B hmm pr \fR[\fB\-b \fIbranch\fR] [\fB\-\-base \fIbranch\fR] [\fB\-\-draft\fR] [\fIworkspace\fR]
+Push the commits made in
+.IR workspace ,
+or in the working directory's latest workspace if none is given, to a
+branch on
+.BR origin ,
+and open a GitHub pull request with
+.BR gh (1)
+to merge them into
+.BR origin 's
+default branch, or the one given with
+.BR \-\-base .
+The branch is the one given with
+.BR \-b " (" \-\-branch ),
+or else the one pushed to before, or else the workspace's name, or else one
+made from the first commit's subject.
+The commits are taken as
+.B hmm merge
+takes them, and pushed with your credentials, which the command in the
+workspace cannot read; your branch is left as it is.
+If
+.B gh
+is not installed, print where to open the pull request instead; if the
+remote is not on GitHub, only push.
+Run again, it updates the branch, and so the pull request, but overwrites
+the branch only if it is as it last pushed it.
+Only commits are pushed, and the same conditions apply as for
+.BR "hmm merge" .
+With
+.BR \-\-draft ,
+open the pull request as a draft.
+.TP
 .B hmm rm \fIworkspace \fR...
 Remove the workspaces given, and everything in them, and the references to
 their commits that
 .B hmm merge
-made.
+and
+.B hmm pr
+made; branches that
+.B hmm pr
+pushed stay on the remote.
 A workspace in which a command is running is not removed.
 .PP
 .B hmm \-\-help

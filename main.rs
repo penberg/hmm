@@ -19,6 +19,7 @@ mod cmd {
     pub mod diff;
     pub mod ls;
     pub mod merge;
+    pub mod pr;
     pub mod rm;
     pub mod run;
 }
@@ -54,6 +55,7 @@ enum Command {
     Diff(cmd::diff::Diff),
     Apply(cmd::apply::Apply),
     Merge(cmd::merge::Merge),
+    Pr(cmd::pr::Pr),
     Rm(cmd::rm::Rm),
 }
 
@@ -76,6 +78,7 @@ fn main() -> ExitCode {
         Some(Command::Diff(diff)) => diff.run(),
         Some(Command::Apply(apply)) => apply.run(),
         Some(Command::Merge(merge)) => merge.run(),
+        Some(Command::Pr(pr)) => pr.run(),
         Some(Command::Rm(rm)) => rm.run(),
     };
     match result {

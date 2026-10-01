@@ -15,6 +15,7 @@
 mod apply;
 mod diff;
 mod merge;
+mod pr;
 mod rm;
 mod run;
 
