@@ -20,6 +20,15 @@ use crate::{
 #[derive(FromArgs)]
 #[argh(subcommand, name = "pr")]
 pub struct Pr {
+    /// the branch to push to; the one pushed to before, or else the
+    /// workspace's name, or else one made from the first commit's subject
+    #[argh(option, short = 'b')]
+    branch: Option<String>,
+
+    /// the branch to ask to merge into; the remote's default branch if none
+    #[argh(option)]
+    base: Option<String>,
+
     /// open the pull request as a draft
     #[argh(switch)]
     draft: bool,
@@ -30,6 +39,9 @@ pub struct Pr {
     workspace: Option<String>,
 }
 
+/// The remote that `hmm pr` pushes to.
+const REMOTE: &str = "origin";
+
 impl Pr {
     pub fn run(self) -> io::Result<ExitCode> {
         let root = root()?;
@@ -38,7 +50,11 @@ impl Pr {
         // A command still running could be halfway through a commit.
         let _lock = workspace.lock()?;
         let origin = workspace.origin()?;
-        let target = Target::of(&origin)?;
+        let github = remote_github(&origin)?;
+        let base = match self.base {
+            Some(base) => base,
+            None => default_branch(&origin)?,
+        };
         let Some(reference) = take(&root, &workspace, &origin)? else {
             eprintln!(
                 "hmm: workspace {} has no commits to push",
@@ -48,47 +64,50 @@ impl Pr {
         };
         warn_uncommitted(&workspace, &origin, &reference)?;
 
-        let branch = format!(
-            "hmm/{}",
-            workspace.name().unwrap_or_else(|| workspace.id.clone())
-        );
+        let range = match git::head(&workspace) {
+            Some(head) => format!("{head}..{reference}"),
+            None => reference.clone(),
+        };
+        let subjects = log(&origin, &range, "%s")?;
+        let pushed = Pushed::of(&workspace);
+        let branch = match (self.branch, &pushed, workspace.name()) {
+            (Some(branch), _, _) => branch,
+            (None, Some(pushed), _) => pushed.branch.clone(),
+            (None, None, Some(name)) => name,
+            (None, None, None) => {
+                slug(subjects.first().map_or("", String::as_str)).unwrap_or(workspace.id.clone())
+            }
+        };
+        // What the branch is expected to be: as it was last pushed, or else
+        // not there at all.
+        let expected = pushed
+            .filter(|pushed| pushed.branch == branch)
+            .map(|pushed| pushed.commit)
+            .unwrap_or_default();
         let tip = rev_parse(&origin, &reference)?;
-        if !push(&workspace, &origin, &target.remote, &reference, &branch)? {
+        if !push(&origin, &reference, &branch, &expected)? {
             return Err(io::Error::other(format!(
-                "could not push workspace {} to {} as {branch}",
+                "could not push workspace {} to {REMOTE} as {branch}: if a branch of \
+                 that name is there already, give another with --branch",
                 workspace.label(),
-                target.remote
             )));
         }
-        fs::write(workspace.dir.join("pushed"), &tip)?;
+        fs::write(workspace.dir.join("pushed"), format!("{branch} {tip}\n"))?;
         eprintln!(
-            "hmm: pushed workspace {} to {} as {branch}",
+            "hmm: pushed workspace {} to {REMOTE} as {branch}",
             workspace.label(),
-            target.remote
         );
 
-        let Some(repo) = target.github else {
-            eprintln!(
-                "hmm: {} is not on GitHub: no pull request opened",
-                target.remote
-            );
+        let Some(repo) = github else {
+            eprintln!("hmm: {REMOTE} is not on GitHub: no pull request opened");
             return Ok(ExitCode::SUCCESS);
         };
         match open(
-            &origin,
-            &repo,
-            &target.base,
-            &branch,
-            &workspace,
-            &reference,
-            self.draft,
+            &origin, &repo, &base, &branch, &range, &subjects, self.draft,
         ) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 eprintln!("hmm: gh is not installed: open the pull request at");
-                println!(
-                    "https://github.com/{repo}/compare/{}...{branch}?expand=1",
-                    target.base
-                );
+                println!("https://github.com/{repo}/compare/{base}...{branch}?expand=1");
                 Ok(ExitCode::SUCCESS)
             }
             result => result,
@@ -96,70 +115,94 @@ impl Pr {
     }
 }
 
-/// Where a workspace's commits go: the remote to push them to, the branch on
-/// it to ask to merge them into, and the remote's GitHub repository, as
-/// `owner/name`, if it is on GitHub.
-struct Target {
-    remote: String,
-    base: String,
-    github: Option<String>,
+/// What `hmm pr` last pushed from a workspace, as it records it in the
+/// workspace's `pushed` file: the branch, and the commit.
+struct Pushed {
+    branch: String,
+    commit: String,
 }
 
-impl Target {
-    /// The target of `origin`'s workspaces: the remote and branch that the
-    /// branch `origin` is on tracks, or, if it tracks none, `origin` and the
-    /// branch of the same name.
-    fn of(origin: &Path) -> io::Result<Target> {
-        let branch = git::git()
-            .arg("-C")
-            .arg(origin)
-            .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
-            .output()?;
-        let branch = String::from_utf8_lossy(&branch.stdout).trim().to_string();
-        if branch.is_empty() {
-            return Err(io::Error::other(format!(
-                "{} is not on a branch",
-                origin.display()
-            )));
-        }
-        let upstream = git::git()
-            .arg("-C")
-            .arg(origin)
-            .args([
-                "for-each-ref",
-                "--format=%(upstream:remotename)%00%(upstream:remoteref)",
-            ])
-            .arg(format!("refs/heads/{branch}"))
-            .output()?;
-        let upstream = String::from_utf8_lossy(&upstream.stdout).trim().to_string();
-        let (remote, base) = match upstream.split_once('\0') {
-            Some((remote, base))
-                if !remote.is_empty() && remote != "." && base.starts_with("refs/heads/") =>
-            {
-                (remote.to_string(), base["refs/heads/".len()..].to_string())
-            }
-            _ => ("origin".to_string(), branch),
-        };
-        // The URL as configured: `git remote get-url` would rewrite it with
-        // `url.<base>.insteadOf`, which can hide where the remote is on GitHub.
-        let url = git::git()
-            .arg("-C")
-            .arg(origin)
-            .args(["config", "--get", &format!("remote.{remote}.url")])
-            .output()?;
-        if !url.status.success() {
-            return Err(io::Error::other(format!(
-                "{} has no remote {remote} to push to",
-                origin.display()
-            )));
-        }
-        let github = github(String::from_utf8_lossy(&url.stdout).trim());
-        Ok(Target {
-            remote,
-            base,
-            github,
+impl Pushed {
+    fn of(workspace: &Workspace) -> Option<Pushed> {
+        let pushed = fs::read_to_string(workspace.dir.join("pushed")).ok()?;
+        let (branch, commit) = pushed.trim().split_once(' ')?;
+        Some(Pushed {
+            branch: branch.to_string(),
+            commit: commit.to_string(),
         })
     }
+}
+
+/// The GitHub repository of `origin`'s remote, as `owner/name`, if it is on
+/// GitHub.
+fn remote_github(origin: &Path) -> io::Result<Option<String>> {
+    // The URL as configured: `git remote get-url` would rewrite it with
+    // `url.<base>.insteadOf`, which can hide where the remote is on GitHub.
+    let url = git::git()
+        .arg("-C")
+        .arg(origin)
+        .args(["config", "--get", &format!("remote.{REMOTE}.url")])
+        .output()?;
+    if !url.status.success() {
+        return Err(io::Error::other(format!(
+            "{} has no remote {REMOTE} to push to",
+            origin.display()
+        )));
+    }
+    Ok(github(String::from_utf8_lossy(&url.stdout).trim()))
+}
+
+/// The remote's default branch: as `origin`'s repository last saw it, or else
+/// as the remote says.
+fn default_branch(origin: &Path) -> io::Result<String> {
+    let known = git::git()
+        .arg("-C")
+        .arg(origin)
+        .args(["symbolic-ref", "--quiet", "--short"])
+        .arg(format!("refs/remotes/{REMOTE}/HEAD"))
+        .output()?;
+    let known = String::from_utf8_lossy(&known.stdout);
+    if let Some(branch) = known.trim().strip_prefix(&format!("{REMOTE}/")) {
+        return Ok(branch.to_string());
+    }
+    let asked = git::git()
+        .arg("-C")
+        .arg(origin)
+        .args(["ls-remote", "--symref", REMOTE, "HEAD"])
+        .output()?;
+    String::from_utf8_lossy(&asked.stdout)
+        .lines()
+        .find_map(|line| {
+            let (target, name) = line.strip_prefix("ref: refs/heads/")?.split_once('\t')?;
+            (name == "HEAD").then(|| target.to_string())
+        })
+        .ok_or_else(|| {
+            io::Error::other(format!(
+                "could not tell {REMOTE}'s default branch: give the branch to merge into with \
+                 --base"
+            ))
+        })
+}
+
+/// A branch name made from a commit's `subject`: its first few words, after
+/// any `area:` prefix, lowercase and joined with `-`.
+fn slug(subject: &str) -> Option<String> {
+    let subject = match subject.split_once(": ") {
+        Some((area, rest)) if !area.contains(' ') => rest,
+        _ => subject,
+    };
+    let words: Vec<String> = subject
+        .split_whitespace()
+        .map(|word| {
+            word.chars()
+                .filter(char::is_ascii_alphanumeric)
+                .collect::<String>()
+                .to_ascii_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .take(5)
+        .collect();
+    (!words.is_empty()).then(|| words.join("-"))
 }
 
 /// The GitHub repository at `url`, as `owner/name`, if it is one.
@@ -183,28 +226,18 @@ fn github(url: &str) -> Option<String> {
     (valid(owner) && valid(name)).then(|| format!("{owner}/{name}"))
 }
 
-/// Pushes `reference` to `remote` as `branch`, and returns whether it could.
+/// Pushes `reference` to the remote as `branch`, and returns whether it could.
 ///
-/// The branch is overwritten only if it is what `hmm pr` last pushed from the
-/// workspace, or, if it has pushed nothing, only if it does not exist, so that
-/// a branch someone else pushed, or added to, is never lost.
-fn push(
-    workspace: &Workspace,
-    origin: &Path,
-    remote: &str,
-    reference: &str,
-    branch: &str,
-) -> io::Result<bool> {
-    let pushed = fs::read_to_string(workspace.dir.join("pushed")).unwrap_or_default();
+/// The branch is overwritten only if it is at `expected`, or, if that is
+/// empty, only if it is not there, so that a branch someone else pushed, or
+/// added to, is never lost.
+fn push(origin: &Path, reference: &str, branch: &str, expected: &str) -> io::Result<bool> {
     let pushed = git::git()
         .arg("-C")
         .arg(origin)
         .args(["push", "--quiet"])
-        .arg(format!(
-            "--force-with-lease=refs/heads/{branch}:{}",
-            pushed.trim()
-        ))
-        .arg(remote)
+        .arg(format!("--force-with-lease=refs/heads/{branch}:{expected}"))
+        .arg(REMOTE)
         .arg(format!("{reference}:refs/heads/{branch}"))
         .status()?;
     Ok(pushed.success())
@@ -212,15 +245,15 @@ fn push(
 
 /// Opens a pull request on `repo` to merge `branch` into `base` with `gh`, or,
 /// if one is already open, says where it is. The title and description are
-/// those of the commit, if there is one, or else the first commit's subject
-/// and a list of the commits' subjects.
+/// those of the commit in `range`, if there is one, or else the first commit's
+/// subject and a list of the commits' `subjects`.
 fn open(
     origin: &Path,
     repo: &str,
     base: &str,
     branch: &str,
-    workspace: &Workspace,
-    reference: &str,
+    range: &str,
+    subjects: &[String],
     draft: bool,
 ) -> io::Result<ExitCode> {
     let existing = gh(origin)
@@ -235,35 +268,15 @@ fn open(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let range = match git::head(workspace) {
-        Some(head) => format!("{head}..{reference}"),
-        None => reference.to_string(),
-    };
-    let log = |format: &str| -> io::Result<String> {
-        let out = git::git()
-            .arg("-C")
-            .arg(origin)
-            .args(["log", "--reverse", "--no-color", "-z"])
-            .arg(format!("--format={format}"))
-            .arg(&range)
-            .output()?;
-        if !out.status.success() {
-            return Err(io::Error::other("git could not read the commits"));
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    };
-    let subjects = log("%s")?;
-    let subjects: Vec<&str> = subjects.split('\0').filter(|s| !s.is_empty()).collect();
-    let title = subjects.first().copied().unwrap_or(branch).to_string();
+    let title = subjects.first().map_or(branch, String::as_str);
     let body = if subjects.len() == 1 {
-        log("%b")?.trim_matches(['\0', '\n']).to_string()
+        log(origin, range, "%b")?.concat().trim().to_string()
     } else {
         subjects
             .iter()
             .map(|subject| format!("- {subject}\n"))
             .collect()
     };
-
     let mut create = gh(origin);
     create
         .args([
@@ -279,6 +292,26 @@ fn open(
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// What `format` shows of each commit in `range` in `origin`'s repository,
+/// oldest first.
+fn log(origin: &Path, range: &str, format: &str) -> io::Result<Vec<String>> {
+    let out = git::git()
+        .arg("-C")
+        .arg(origin)
+        .args(["log", "--reverse", "--no-color", "-z"])
+        .arg(format!("--format={format}"))
+        .arg(range)
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other("git could not read the commits"));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 /// A command that runs `gh` in `origin`.

@@ -34,7 +34,10 @@ esac
 fn project(world: &World) -> (PathBuf, PathBuf) {
     let dir = world.repo("project");
     let remote = world.dir("remote.git");
-    world.git(&remote, &["init", "--quiet", "--bare"]);
+    world.git(
+        &remote,
+        &["init", "--quiet", "--bare", "--initial-branch=main"],
+    );
     world.git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
     world.git(&dir, &["push", "--quiet", "-u", "origin", "main"]);
     (dir, remote)
@@ -79,6 +82,38 @@ fn remote_branch(world: &World, remote: &Path, branch: &str) -> String {
     world.git(remote, &["rev-parse", &format!("refs/heads/{branch}")])
 }
 
+/// The branches in `remote` other than `main`.
+fn pushed(world: &World, remote: &Path) -> Vec<String> {
+    world
+        .git(
+            remote,
+            &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        )
+        .lines()
+        .filter(|branch| *branch != "main")
+        .map(str::to_string)
+        .collect()
+}
+
+/// The value given for `option` in a call to `gh`.
+fn arg<'a>(call: &'a [String], option: &str) -> &'a str {
+    let at = call.iter().position(|arg| arg == option).unwrap();
+    &call[at + 1]
+}
+
+/// Makes `dir`'s remote look as if it were on GitHub.
+fn on_github_as(world: &World, dir: &Path, remote: &Path, name: &str) {
+    world.git(dir, &["remote", "set-url", name, GITHUB]);
+    world.git(
+        dir,
+        &[
+            "config",
+            &format!("url.{}.insteadOf", remote.display()),
+            GITHUB,
+        ],
+    );
+}
+
 #[test]
 fn pushes_the_commits_to_a_branch_named_after_the_workspace() {
     need_sandbox!();
@@ -98,7 +133,8 @@ fn pushes_the_commits_to_a_branch_named_after_the_workspace() {
     let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
     let out = pr(&world, &dir, &[]);
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(remote_branch(&world, &remote, "hmm/feature"), tip);
+    assert_eq!(pushed(&world, &remote), ["feature"]);
+    assert_eq!(remote_branch(&world, &remote, "feature"), tip);
     assert!(stderr(&out).contains("not on GitHub"), "{}", stderr(&out));
     assert!(gh_calls(&world).is_empty());
     // The working directory is left as it was.
@@ -106,18 +142,38 @@ fn pushes_the_commits_to_a_branch_named_after_the_workspace() {
 }
 
 #[test]
-fn names_the_branch_after_the_id_without_a_name() {
+fn names_the_branch_after_the_first_commit_without_a_name() {
     need_sandbox!();
     let world = World::new();
     let (dir, remote) = project(&world);
-    let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
-    let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
+    world.sh(
+        &dir,
+        "echo two > a && git commit --quiet -am \"gpu/vulkan: Count a subgroup's lanes when scoring keys\" \
+         && echo three > a && git commit --quiet -am three",
+    );
     let out = pr(&world, &dir, &[]);
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(
-        remote_branch(&world, &remote, &format!("hmm/{}", workspace.id)),
-        tip
+    assert_eq!(pushed(&world, &remote), ["count-a-subgroups-lanes-when"]);
+}
+
+#[test]
+fn pushes_to_the_branch_given() {
+    need_sandbox!();
+    let world = World::new();
+    let (dir, remote) = project(&world);
+    world.run(
+        &dir,
+        &[
+            "-n",
+            "feature",
+            "sh",
+            "-c",
+            "echo two > a && git commit --quiet -am two",
+        ],
     );
+    let out = pr(&world, &dir, &["--branch", "fix-a"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(pushed(&world, &remote), ["fix-a"]);
 }
 
 #[test]
@@ -141,7 +197,7 @@ fn opens_a_pull_request_titled_after_the_commit() {
     assert_eq!(stdout(&out), "https://github.com/owner/name/pull/1\n");
     let calls = gh_calls(&world);
     assert_eq!(calls.len(), 2, "{calls:?}");
-    assert_eq!(calls[0][..3], ["pr", "view", "hmm/feature"]);
+    assert_eq!(calls[0][..3], ["pr", "view", "feature"]);
     assert_eq!(
         calls[1],
         [
@@ -152,12 +208,41 @@ fn opens_a_pull_request_titled_after_the_commit() {
             "--base",
             "main",
             "--head",
-            "hmm/feature",
+            "feature",
             "--title=two",
             "--body=Why two.",
             "--draft",
         ]
     );
+}
+
+#[test]
+fn asks_to_merge_into_the_default_branch_whatever_branch_is_checked_out() {
+    need_sandbox!();
+    let world = World::new();
+    let (dir, remote) = project(&world);
+    // A branch that tracks one since merged and deleted on the remote.
+    world.git(&dir, &["switch", "--quiet", "-c", "topic"]);
+    world.git(&dir, &["push", "--quiet", "-u", "origin", "topic"]);
+    world.git(&remote, &["branch", "-D", "topic"]);
+    on_github(&world, &dir, &remote);
+    world.sh(&dir, "echo two > a && git commit --quiet -am two");
+    let out = pr(&world, &dir, &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(arg(gh_calls(&world).last().unwrap(), "--base"), "main");
+}
+
+#[test]
+fn asks_to_merge_into_the_branch_given() {
+    need_sandbox!();
+    let world = World::new();
+    let (dir, remote) = project(&world);
+    world.git(&dir, &["push", "--quiet", "origin", "main:release"]);
+    on_github(&world, &dir, &remote);
+    world.sh(&dir, "echo two > a && git commit --quiet -am two");
+    let out = pr(&world, &dir, &["--base", "release"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(arg(gh_calls(&world).last().unwrap(), "--base"), "release");
 }
 
 #[test]
@@ -187,7 +272,8 @@ fn updates_the_branch_and_the_pull_request_when_run_again() {
     on_github(&world, &dir, &remote);
     let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
     assert!(pr(&world, &dir, &[]).status.success());
-    // Rewritten, as after an amend or a rebase.
+    // Rewritten, as after an amend or a rebase, and with another subject,
+    // which does not rename the branch.
     world.git(
         &workspace.tree,
         &["commit", "--quiet", "--amend", "-m", "two, amended"],
@@ -195,10 +281,8 @@ fn updates_the_branch_and_the_pull_request_when_run_again() {
     let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
     let out = pr(&world, &dir, &[]);
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(
-        remote_branch(&world, &remote, &format!("hmm/{}", workspace.id)),
-        tip
-    );
+    assert_eq!(pushed(&world, &remote), ["two"]);
+    assert_eq!(remote_branch(&world, &remote, "two"), tip);
     assert_eq!(stdout(&out), "https://github.com/owner/name/pull/1\n");
     let calls = gh_calls(&world);
     assert_eq!(calls.len(), 3, "{calls:?}");
@@ -220,55 +304,10 @@ fn does_not_overwrite_a_branch_it_did_not_push() {
             "echo two > a && git commit --quiet -am two",
         ],
     );
-    world.git(&dir, &["push", "--quiet", "origin", "main:hmm/feature"]);
-    let theirs = remote_branch(&world, &remote, "hmm/feature");
-    assert_fails(&pr(&world, &dir, &[]), "could not push");
-    assert_eq!(remote_branch(&world, &remote, "hmm/feature"), theirs);
-}
-
-#[test]
-fn pushes_to_the_remote_and_branch_the_branch_tracks() {
-    need_sandbox!();
-    let world = World::new();
-    let (dir, remote) = project(&world);
-    world.git(&dir, &["remote", "rename", "origin", "upstream"]);
-    world.git(
-        &dir,
-        &[
-            "switch",
-            "--quiet",
-            "-c",
-            "topic",
-            "--track",
-            "upstream/main",
-        ],
-    );
-    on_github_as(&world, &dir, &remote, "upstream");
-    let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
-    let tip = world.git(&workspace.tree, &["rev-parse", "HEAD"]);
-    let out = pr(&world, &dir, &[]);
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(
-        remote_branch(&world, &remote, &format!("hmm/{}", workspace.id)),
-        tip
-    );
-    let calls = gh_calls(&world);
-    let create = calls.last().unwrap();
-    let base = create.iter().position(|arg| arg == "--base").unwrap();
-    assert_eq!(create[base + 1], "main");
-}
-
-/// Makes `dir`'s remote `name` look as if it were on GitHub.
-fn on_github_as(world: &World, dir: &Path, remote: &Path, name: &str) {
-    world.git(dir, &["remote", "set-url", name, GITHUB]);
-    world.git(
-        dir,
-        &[
-            "config",
-            &format!("url.{}.insteadOf", remote.display()),
-            GITHUB,
-        ],
-    );
+    world.git(&dir, &["push", "--quiet", "origin", "main:feature"]);
+    let theirs = remote_branch(&world, &remote, "feature");
+    assert_fails(&pr(&world, &dir, &[]), "--branch");
+    assert_eq!(remote_branch(&world, &remote, "feature"), theirs);
 }
 
 #[test]
@@ -277,7 +316,7 @@ fn prints_where_to_open_the_pull_request_without_gh() {
     let world = World::new();
     let (dir, remote) = project(&world);
     on_github(&world, &dir, &remote);
-    let workspace = world.sh(&dir, "echo two > a && git commit --quiet -am two");
+    world.sh(&dir, "echo two > a && git commit --quiet -am two");
     // A path with git on it, but not gh.
     let bin = world.dir("bin");
     let git = Command::new("sh")
@@ -293,16 +332,9 @@ fn prints_where_to_open_the_pull_request_without_gh() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         stdout(&out),
-        format!(
-            "https://github.com/owner/name/compare/main...hmm/{}?expand=1\n",
-            workspace.id
-        )
+        "https://github.com/owner/name/compare/main...two?expand=1\n"
     );
-    assert!(
-        world
-            .git(&remote, &["branch", "--list", "hmm/*"])
-            .contains("hmm/")
-    );
+    assert_eq!(pushed(&world, &remote), ["two"]);
 }
 
 #[test]
@@ -322,10 +354,7 @@ fn pushes_only_commits_and_says_so() {
         "{}",
         stderr(&out)
     );
-    assert_eq!(
-        remote_branch(&world, &remote, &format!("hmm/{}", workspace.id)),
-        tip
-    );
+    assert_eq!(remote_branch(&world, &remote, "b"), tip);
 }
 
 #[test]
@@ -335,7 +364,7 @@ fn fails_without_commits() {
     let (dir, remote) = project(&world);
     world.sh(&dir, "echo uncommitted > a");
     assert_fails(&pr(&world, &dir, &[]), "has no commits to push");
-    assert_eq!(world.git(&remote, &["branch", "--list", "hmm/*"]), "");
+    assert!(pushed(&world, &remote).is_empty());
 }
 
 #[test]
@@ -345,16 +374,6 @@ fn fails_without_a_remote() {
     let dir = world.repo("project");
     world.sh(&dir, "echo two > a && git commit --quiet -am two");
     assert_fails(&pr(&world, &dir, &[]), "has no remote origin");
-}
-
-#[test]
-fn fails_when_not_on_a_branch() {
-    need_sandbox!();
-    let world = World::new();
-    let (dir, _) = project(&world);
-    world.git(&dir, &["switch", "--quiet", "--detach"]);
-    world.sh(&dir, "echo two > a && git commit --quiet -am two");
-    assert_fails(&pr(&world, &dir, &[]), "is not on a branch");
 }
 
 #[test]
@@ -369,7 +388,7 @@ fn leaves_a_workspace_in_which_a_command_is_running_alone() {
         &["commit", "--quiet", "-am", "two"],
     );
     assert_fails(&pr(&world, &dir, &[]), "is running");
-    assert_eq!(world.git(&remote, &["branch", "--list", "hmm/*"]), "");
+    assert!(pushed(&world, &remote).is_empty());
     running.stop();
     assert!(pr(&world, &dir, &[]).status.success());
 }

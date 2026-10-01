@@ -165,21 +165,22 @@ The commits stay in the repository as
 .BI refs/hmm/ id
 until the workspace is removed.
 .TP
-.B hmm pr \fR[\fB\-\-draft\fR] [\fIworkspace\fR]
+.B hmm pr \fR[\fB\-b \fIbranch\fR] [\fB\-\-base \fIbranch\fR] [\fB\-\-draft\fR] [\fIworkspace\fR]
 Push the commits made in
 .IR workspace ,
 or in the working directory's latest workspace if none is given, to a
-branch,
-.BI hmm/ name\fR,
-or
-.BI hmm/ id
-if the workspace has no name, on the remote that the branch the directory
-it was made from is on tracks, or
-.B origin
-if it tracks none, and open a GitHub pull request with
+branch on
+.BR origin ,
+and open a GitHub pull request with
 .BR gh (1)
-to merge them into the branch it tracks there, or the branch of the same
-name.
+to merge them into
+.BR origin 's
+default branch, or the one given with
+.BR \-\-base .
+The branch is the one given with
+.BR \-b " (" \-\-branch ),
+or else the one pushed to before, or else the workspace's name, or else one
+made from the first commit's subject.
 The commits are taken as
 .B hmm merge
 takes them, and pushed with your credentials, which the command in the
