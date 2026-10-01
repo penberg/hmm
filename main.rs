@@ -39,8 +39,7 @@ use std::{
 use argh::FromArgs;
 
 /// Run commands in workspaces: copies of the working directory that they may
-/// write to, while the rest of the system stays as it is. With no command,
-/// list the workspaces of the working directory.
+/// write to, while the rest of the system stays as it is.
 #[derive(FromArgs)]
 struct Args {
     #[argh(subcommand)]
@@ -58,10 +57,20 @@ enum Command {
     Rm(cmd::rm::Rm),
 }
 
+/// Prints what `hmm --help` prints, for `hmm` alone.
+fn usage() -> io::Result<ExitCode> {
+    let help = Args::from_args(&["hmm"], &["--help"])
+        .err()
+        .map(|exit| exit.output)
+        .unwrap_or_default();
+    print!("{help}");
+    Ok(ExitCode::SUCCESS)
+}
+
 fn main() -> ExitCode {
     let args: Args = argh::from_env();
     let result = match args.command {
-        None => cmd::ls::list(false),
+        None => usage(),
         Some(Command::Run(run)) => run.run(),
         Some(Command::Ls(ls)) => ls.run(),
         Some(Command::Diff(diff)) => diff.run(),

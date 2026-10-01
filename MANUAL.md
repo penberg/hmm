@@ -83,11 +83,8 @@ removes it when the command exits.
 hmm
 ```
 
-With no command, `hmm` lists the workspaces of the working directory, as
-[`hmm ls`](#hmm-ls) does.
-
-`hmm --help` prints a summary of the commands, and `hmm <command> --help`
-the options of a command.
+With no command, `hmm` prints a summary of the commands, as `hmm --help`
+does. `hmm <command> --help` prints the options of a command.
 
 ### `hmm run`
 
