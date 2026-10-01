@@ -1,4 +1,4 @@
-//! `hmm ls`, and `hmm` alone: lists workspaces.
+//! `hmm ls`: lists workspaces.
 
 use std::{env, io, path::Path, process::ExitCode, time::SystemTime};
 
