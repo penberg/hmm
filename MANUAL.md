@@ -17,6 +17,7 @@ platform, see [README.md](README.md#sandbox); for the man page, see
   - [`hmm diff`](#hmm-diff)
   - [`hmm merge`](#hmm-merge)
   - [`hmm apply`](#hmm-apply)
+  - [`hmm pr`](#hmm-pr)
   - [`hmm rm`](#hmm-rm)
 - [What the command can do](#what-the-command-can-do)
 - [Files](#files)
@@ -44,6 +45,7 @@ Then look at what it did, and take it or leave it:
 ```sh
 hmm diff parser     # see what changed
 hmm merge parser    # merge the commits it made into your branch
+hmm pr parser       # or push them and open a pull request for them
 hmm rm parser       # remove the workspace
 ```
 
@@ -69,8 +71,8 @@ command takes a workspace, you can give:
 - the start of its ID, if no other workspace's ID starts the same way:
   `hmm rm k3` removes `k3xq9a` if it is the only ID starting with `k3`.
 
-`hmm diff`, `hmm merge`, and `hmm apply` use the working directory's latest
-workspace when none is given.
+`hmm diff`, `hmm merge`, `hmm apply`, and `hmm pr` use the working
+directory's latest workspace when none is given.
 
 A workspace stays until you remove it with `hmm rm`, or `hmm run --rm`
 removes it when the command exits.
@@ -240,6 +242,51 @@ Works whether or not the origin is a git repository.
 | --- | --- |
 | `--check` | Only say whether the changes apply, changing nothing. |
 
+### `hmm pr`
+
+```
+hmm pr [--draft] [workspace]
+```
+
+Pushes the commits made in `workspace` to a branch, `hmm/<name>`, or
+`hmm/<id>` if the workspace has no name, and opens a GitHub pull request to
+merge them into the branch its origin is on. With no workspace, uses the
+working directory's latest.
+
+The command in the workspace cannot push, as it cannot read `~/.ssh` or
+`~/.config/gh`. `hmm pr` takes its commits as [`hmm merge`](#hmm-merge)
+does, and pushes them from the origin's repository, with your credentials,
+leaving your branch as it is.
+
+The commits are pushed to the remote that the origin's branch tracks, and
+the pull request asks to merge them into the branch it tracks there. If it
+tracks none, they go to `origin`, and the pull request is for the branch of
+the same name.
+
+The pull request is opened with [`gh`](https://cli.github.com), titled after
+the commit, with its message as the description, or, if there are several,
+after the first, with a list of them. If `gh` is not installed, `hmm pr`
+prints where to open it instead. If the remote is not on GitHub, the
+commits are pushed, and no pull request is opened.
+
+Run `hmm pr` again after more work in the workspace to update the branch,
+and so the pull request, even if the commits were rewritten: the branch is
+overwritten, but only if it is as `hmm pr` last pushed it. A branch of the
+same name that `hmm pr` did not push is never overwritten.
+
+Only commits are pushed. If the command left changes it did not commit,
+`hmm pr` says so. The workspace must have been made from the top of a git
+repository on a branch, and no command may be running in it.
+
+Unlike the other commands, `hmm pr` publishes: what it pushes may be seen by
+anyone who can see the remote.
+
+**Options**
+
+| Option | Description |
+| --- | --- |
+| `--draft` | Open the pull request as a draft. |
+
 ### `hmm rm`
 
 ```
@@ -247,8 +294,9 @@ hmm rm workspace...
 ```
 
 Removes the workspaces given, everything in them, and the `refs/hmm/<id>`
-references that `hmm merge` made to their commits. At least one workspace
-must be given.
+references that `hmm merge` and `hmm pr` made to their commits. Branches
+that `hmm pr` pushed stay on the remote. At least one workspace must be
+given.
 
 A workspace in which a command is running is not removed. If a workspace
 cannot be found or removed, `hmm rm` says so, goes on to the rest, and exits
@@ -284,6 +332,7 @@ ID. In each:
 | `origin` | The path of the origin. A running command holds a lock on it. |
 | `name` | The workspace's name, if it has one. |
 | `head`, `fork` | If the origin is the top of a git repository: the commit it was at when the workspace was made, and the tree of its files then. |
+| `pushed` | The commit `hmm pr` last pushed, if it has pushed any. |
 | `base/` | Otherwise: a clone of the origin as it was when the workspace was made. |
 | `objects/`, `*.index`, `git/` | What `hmm` keeps to compare the workspace with, out of the origin's repository. |
 

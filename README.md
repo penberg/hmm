@@ -82,6 +82,9 @@ compare the workspace with:
 - `hmm diff` shows what changed in the workspace, leaving out what git
   ignores, such as build output.
 - `hmm merge` brings the commits made in the workspace into your branch.
+- `hmm pr` pushes the commits made in the workspace to a branch and opens a
+  GitHub pull request for them, with your credentials, which the command in
+  the workspace cannot read.
 - `hmm apply` makes the changes in the workspace, committed or not, in the
   working directory, without staging or committing anything. It applies all
   of them or, if any conflicts with what you have changed since, none.
